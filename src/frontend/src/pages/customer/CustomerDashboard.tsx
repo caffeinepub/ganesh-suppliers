@@ -1,7 +1,7 @@
 import { Package, ShoppingBag, TrendingUp, Wallet } from "lucide-react";
 import type { Customer } from "../../backend.d";
-import { getAllOrdersWithCustomer } from "../../customerOrderStore";
-import { formatCurrency, formatDate, mockPayments } from "../../mockData";
+import { useDataStore } from "../../dataStore";
+import { formatCurrency, formatDate } from "../../mockData";
 import type { CustomerSection } from "./CustomerLayout";
 
 interface Props {
@@ -10,10 +10,10 @@ interface Props {
 }
 
 export default function CustomerDashboard({ customer, onNavigate }: Props) {
-  const allOrders = getAllOrdersWithCustomer();
-  const customerOrders = allOrders.filter((o) => o.customerId === customer.id);
+  const { orders, payments } = useDataStore();
+  const customerOrders = orders.filter((o) => o.customerId === customer.id);
   const totalPurchase = customerOrders.reduce((s, o) => s + o.totalAmount, 0);
-  const totalPaid = mockPayments
+  const totalPaid = payments
     .filter((p) => p.customerId === customer.id)
     .reduce((s, p) => s + p.amount, 0);
   const balanceDue = totalPurchase - totalPaid;

@@ -8,13 +8,8 @@ import {
   TrendingUp,
   UserCheck,
 } from "lucide-react";
-import {
-  formatCurrency,
-  mockCustomers,
-  mockDashboardStats,
-  mockOrders,
-  mockProducts,
-} from "../../mockData";
+import { useDataStore } from "../../dataStore";
+import { formatCurrency } from "../../mockData";
 
 interface StatCardProps {
   label: string;
@@ -59,21 +54,38 @@ function StatCard({
 }
 
 export default function Dashboard() {
-  const stats = mockDashboardStats;
-  const pendingAmt = mockOrders
-    .filter((o) => o.status !== "delivered")
-    .reduce((s, o) => s + o.totalAmount, 0);
+  const { orders, customers, products } = useDataStore();
 
-  const todayOrders = mockOrders.filter((o) => {
+  const todayOrders = orders.filter((o) => {
     const d = new Date(Number(o.createdAt));
     const today = new Date();
     return d.toDateString() === today.toDateString();
   });
 
+  const totalRevenue = orders
+    .filter((o) => o.status === "delivered")
+    .reduce((s, o) => s + o.totalAmount, 0);
+
+  const todayRevenue = todayOrders.reduce((s, o) => s + o.totalAmount, 0);
+
+  const pendingAmt = orders
+    .filter((o) => o.status !== "delivered")
+    .reduce((s, o) => s + o.totalAmount, 0);
+
+  const thisMonthRevenue = orders
+    .filter((o) => {
+      const d = new Date(Number(o.createdAt));
+      const now = new Date();
+      return (
+        d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()
+      );
+    })
+    .reduce((s, o) => s + o.totalAmount, 0);
+
   const cards = [
     {
       label: "Total Orders",
-      value: `${stats.totalOrders}`,
+      value: String(orders.length),
       icon: ShoppingCart,
       colorClass: "stat-card-orange",
       iconColor: "#f97316",
@@ -89,7 +101,7 @@ export default function Dashboard() {
     },
     {
       label: "Today's Revenue",
-      value: formatCurrency(stats.todayRevenue),
+      value: formatCurrency(todayRevenue),
       icon: TrendingUp,
       colorClass: "stat-card-green",
       iconColor: "#22c55e",
@@ -97,7 +109,7 @@ export default function Dashboard() {
     },
     {
       label: "Total Revenue",
-      value: formatCurrency(stats.totalRevenue),
+      value: formatCurrency(totalRevenue),
       icon: BarChart3,
       colorClass: "stat-card-orange",
       iconColor: "#f97316",
@@ -111,28 +123,28 @@ export default function Dashboard() {
     },
     {
       label: "Total Customers",
-      value: String(Number(stats.totalCustomers)),
+      value: String(customers.length),
       icon: UserCheck,
       colorClass: "stat-card-purple",
       iconColor: "#a855f7",
     },
     {
       label: "Total Products",
-      value: String(mockProducts.length),
+      value: String(products.length),
       icon: Package,
       colorClass: "stat-card-teal",
       iconColor: "#14b8a6",
     },
     {
       label: "Revenue This Month",
-      value: formatCurrency(stats.todayRevenue * 22),
+      value: formatCurrency(thisMonthRevenue),
       icon: DollarSign,
       colorClass: "stat-card-green",
       iconColor: "#22c55e",
     },
   ];
 
-  const recentOrders = [...mockOrders]
+  const recentOrders = [...orders]
     .sort((a, b) => Number(b.createdAt) - Number(a.createdAt))
     .slice(0, 5);
 
@@ -235,7 +247,7 @@ export default function Dashboard() {
                 Active Customers
               </span>
               <span className="font-bold text-green-600">
-                {mockCustomers.filter((c) => c.isActive).length}
+                {customers.filter((c) => c.isActive).length}
               </span>
             </div>
             <div className="flex items-center justify-between">
@@ -243,14 +255,14 @@ export default function Dashboard() {
                 Inactive Customers
               </span>
               <span className="font-bold text-red-500">
-                {mockCustomers.filter((c) => !c.isActive).length}
+                {customers.filter((c) => !c.isActive).length}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">
                 Total Registered
               </span>
-              <span className="font-bold">{mockCustomers.length}</span>
+              <span className="font-bold">{customers.length}</span>
             </div>
           </div>
         </div>
@@ -260,19 +272,19 @@ export default function Dashboard() {
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Pending</span>
               <span className="font-bold" style={{ color: "#f59e0b" }}>
-                {mockOrders.filter((o) => o.status === "pending").length}
+                {orders.filter((o) => o.status === "pending").length}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Accepted</span>
               <span className="font-bold" style={{ color: "#3b82f6" }}>
-                {mockOrders.filter((o) => o.status === "accepted").length}
+                {orders.filter((o) => o.status === "accepted").length}
               </span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">Delivered</span>
               <span className="font-bold" style={{ color: "#22c55e" }}>
-                {mockOrders.filter((o) => o.status === "delivered").length}
+                {orders.filter((o) => o.status === "delivered").length}
               </span>
             </div>
           </div>

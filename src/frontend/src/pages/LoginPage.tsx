@@ -5,7 +5,8 @@ import { ArrowLeft, Eye, EyeOff, ShieldCheck, Store } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { Customer } from "../backend.d";
-import { mockCustomers } from "../mockData";
+import { createActorWithConfig } from "../config";
+import { useDataStore } from "../dataStore";
 
 type LoginMode = "landing" | "admin" | "customer";
 
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
+  const { profile } = useDataStore();
   const [mode, setMode] = useState<LoginMode>("landing");
   const [phase, setPhase] = useState(0);
   const [showPass, setShowPass] = useState(false);
@@ -41,41 +43,66 @@ export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
-    if (
-      adminForm.email === "admin@ganeshsuppliers.com" &&
-      adminForm.password === "Admin@1234"
-    ) {
-      toast.success("Welcome back, Admin!");
-      onAdminLogin();
-    } else {
-      toast.error(
-        "Invalid credentials. Use admin@ganeshsuppliers.com / Admin@1234",
-      );
+    try {
+      const validEmail = profile.email || "admin@ganeshsuppliers.com";
+      if (adminForm.email !== validEmail) {
+        toast.error("Invalid credentials.");
+        setLoading(false);
+        return;
+      }
+      const actor = await createActorWithConfig();
+      const verified = await (actor as any).adminVerify(adminForm.password);
+      if (verified) {
+        toast.success("Welcome back, Admin!");
+        onAdminLogin();
+      } else {
+        // Fallback: compare against profile hash for offline/compat
+        if (adminForm.password === profile.adminPasswordHash) {
+          toast.success("Welcome back, Admin!");
+          onAdminLogin();
+        } else {
+          toast.error("Invalid credentials.");
+        }
+      }
+    } catch (err) {
+      console.error("Admin login error", err);
+      // Fallback: compare locally
+      const validEmail = profile.email || "admin@ganeshsuppliers.com";
+      if (
+        adminForm.email === validEmail &&
+        adminForm.password === profile.adminPasswordHash
+      ) {
+        toast.success("Welcome back, Admin!");
+        onAdminLogin();
+      } else {
+        toast.error("Invalid credentials.");
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleCustomerLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
-    const customer = mockCustomers.find(
-      (c) =>
-        c.storeNumber === customerForm.storeNumber &&
-        c.passwordHash === customerForm.password,
-    );
-    if (customer) {
-      if (!customer.isActive) {
-        toast.error("Your account is inactive. Contact admin.");
-      } else {
+    try {
+      const actor = await createActorWithConfig();
+      const customer = (await (actor as any).customerLogin(
+        customerForm.storeNumber,
+        customerForm.password,
+      )) as Customer | null;
+      if (customer) {
         toast.success(`Welcome, ${customer.companyName}!`);
         onCustomerLogin(customer);
+      } else {
+        toast.error("Invalid store number or password.");
       }
-    } else {
-      toast.error("Invalid store number or password.");
+    } catch (err) {
+      console.error("Customer login error", err);
+      toast.error("Login failed. Please try again.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const inputStyle = {
@@ -150,7 +177,6 @@ export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
       <div className="relative z-10 w-full max-w-md px-6">
         {mode === "landing" && (
           <div className="text-center">
-            {/* Logo */}
             <div
               className="mx-auto mb-6 w-24 h-24 rounded-2xl overflow-hidden transition-all duration-700"
               style={{
@@ -165,8 +191,6 @@ export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
                 className="w-full h-full object-cover"
               />
             </div>
-
-            {/* Company name */}
             <div
               className="transition-all duration-700"
               style={{
@@ -182,7 +206,7 @@ export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
                   letterSpacing: "-0.02em",
                 }}
               >
-                Ganesh Suppliers
+                {profile.companyName || "Ganesh Suppliers"}
               </h1>
               <p
                 className="mt-1 text-sm"
@@ -191,8 +215,6 @@ export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
                 Wholesale Vegetable Distributors
               </p>
             </div>
-
-            {/* Version */}
             <div
               className="mt-3 transition-all duration-500"
               style={{ opacity: phase >= 3 ? 1 : 0 }}
@@ -208,8 +230,6 @@ export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
                 v1.0.0
               </span>
             </div>
-
-            {/* Buttons */}
             <div
               className="mt-10 flex flex-col gap-4 transition-all duration-700"
               style={{
@@ -299,7 +319,7 @@ export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
                   <Input
                     data-ocid="admin.login.input"
                     type="email"
-                    placeholder="admin@ganeshsuppliers.com"
+                    placeholder={profile.email || "admin@ganeshsuppliers.com"}
                     value={adminForm.email}
                     onChange={(e) =>
                       setAdminForm((p) => ({ ...p, email: e.target.value }))
@@ -314,7 +334,7 @@ export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
                     <Input
                       data-ocid="admin.login.password.input"
                       type={showPass ? "text" : "password"}
-                      placeholder="Admin@1234"
+                      placeholder="Your admin password"
                       value={adminForm.password}
                       onChange={(e) =>
                         setAdminForm((p) => ({

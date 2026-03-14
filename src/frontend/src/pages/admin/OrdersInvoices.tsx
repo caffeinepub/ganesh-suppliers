@@ -1,7 +1,17 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import {
   CheckCircle2,
   Download,
@@ -9,19 +19,15 @@ import {
   Package,
   Printer,
   Search,
+  Trash2,
   Truck,
 } from "lucide-react";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Order } from "../../backend.d";
 import { OrderStatus } from "../../backend.d";
-import {
-  formatCurrency,
-  formatDate,
-  formatDateTime,
-  mockCompanyProfile,
-  mockOrders,
-} from "../../mockData";
+import { useDataStore } from "../../dataStore";
+import { formatCurrency, formatDate, formatDateTime } from "../../mockData";
 
 const STATUS_COLORS: Record<
   string,
@@ -30,10 +36,11 @@ const STATUS_COLORS: Record<
   pending: { bg: "#fef3c7", text: "#d97706", label: "Pending" },
   accepted: { bg: "#dbeafe", text: "#2563eb", label: "Accepted" },
   delivered: { bg: "#dcfce7", text: "#16a34a", label: "Delivered" },
+  deleted: { bg: "#fee2e2", text: "#dc2626", label: "Deleted" },
 };
 
 function InvoicePrint({ order }: { order: Order }) {
-  const profile = mockCompanyProfile;
+  const { profile } = useDataStore();
   const subtotal = order.totalAmount;
   const gst = Math.round(subtotal * 0.05);
   const total = subtotal + gst;
@@ -233,15 +240,28 @@ function InvoicePrint({ order }: { order: Order }) {
 }
 
 export default function OrdersInvoices() {
-  const [orders, setOrders] = useState<Order[]>(() =>
-    mockOrders.map((o) => ({ ...o })),
-  );
+  const {
+    orders,
+    updateOrderStatus: storeUpdateStatus,
+    deleteOrder,
+  } = useDataStore();
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | OrderStatus>("all");
+  const [statusFilter, setStatusFilter] = useState<
+    "all" | OrderStatus | "deleted"
+  >("all");
   const printRef = useRef<HTMLDivElement>(null);
 
+  // Delete dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState("");
+  const [deleteReason, setDeleteReason] = useState("");
+
   const filtered = orders
-    .filter((o) => statusFilter === "all" || o.status === statusFilter)
+    .filter((o) => {
+      if (statusFilter === "deleted") return (o as any).isDeleted === true;
+      if (statusFilter === "all") return true;
+      return o.status === statusFilter && !(o as any).isDeleted;
+    })
     .filter(
       (o) =>
         o.invoiceNumber.toLowerCase().includes(search.toLowerCase()) ||
@@ -250,22 +270,26 @@ export default function OrdersInvoices() {
     .sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
 
   const updateStatus = (id: string, status: OrderStatus) => {
-    setOrders((os) =>
-      os.map((o) =>
-        o.id === id
-          ? {
-              ...o,
-              status,
-              deliveredAt:
-                status === OrderStatus.delivered
-                  ? BigInt(Date.now())
-                  : o.deliveredAt,
-            }
-          : o,
-      ),
-    );
+    storeUpdateStatus(id, status);
+  };
+
+  const openDeleteDialog = (orderId: string) => {
+    setDeleteTargetId(orderId);
+    setDeleteReason("");
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (!deleteReason.trim()) {
+      toast.error("Please enter a reason for deletion");
+      return;
+    }
+    deleteOrder(deleteTargetId, deleteReason.trim());
+    setDeleteDialogOpen(false);
+    setDeleteTargetId("");
+    setDeleteReason("");
     toast.success(
-      `Order ${status === OrderStatus.accepted ? "accepted" : "marked as delivered"}!`,
+      "Order deleted. It will still appear in records but excluded from accounts.",
     );
   };
 
@@ -282,11 +306,18 @@ export default function OrdersInvoices() {
     win.print();
   };
 
+  const deletedCount = orders.filter((o) => (o as any).isDeleted).length;
+  const activeOrders = orders.filter((o) => !(o as any).isDeleted);
+
   const counts = {
-    all: orders.length,
-    pending: orders.filter((o) => o.status === OrderStatus.pending).length,
-    accepted: orders.filter((o) => o.status === OrderStatus.accepted).length,
-    delivered: orders.filter((o) => o.status === OrderStatus.delivered).length,
+    all: activeOrders.length,
+    pending: activeOrders.filter((o) => o.status === OrderStatus.pending)
+      .length,
+    accepted: activeOrders.filter((o) => o.status === OrderStatus.accepted)
+      .length,
+    delivered: activeOrders.filter((o) => o.status === OrderStatus.delivered)
+      .length,
+    deleted: deletedCount,
   };
 
   return (
@@ -297,6 +328,51 @@ export default function OrdersInvoices() {
           <InvoicePrint key={o.id} order={o} />
         ))}
       </div>
+
+      {/* Delete Order Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent data-ocid="orders.delete.dialog">
+          <DialogHeader>
+            <DialogTitle className="text-red-600">Delete Order</DialogTitle>
+            <DialogDescription>
+              This order will be marked as deleted and removed from account
+              statements. It will still be visible in the admin and customer
+              portal with a "Deleted" status. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Label htmlFor="delete-reason" className="font-semibold">
+              Reason for Deletion <span className="text-red-500">*</span>
+            </Label>
+            <Textarea
+              id="delete-reason"
+              data-ocid="orders.delete.reason_input"
+              placeholder="Enter reason (e.g. Duplicate order, Customer cancelled, Data entry error...)"
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              className="mt-2"
+              rows={3}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              data-ocid="orders.delete.cancel_button"
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              data-ocid="orders.delete.confirm_button"
+              variant="destructive"
+              onClick={confirmDelete}
+              disabled={!deleteReason.trim()}
+            >
+              <Trash2 size={14} className="mr-1" /> Confirm Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -317,7 +393,9 @@ export default function OrdersInvoices() {
 
       <Tabs
         value={statusFilter}
-        onValueChange={(v) => setStatusFilter(v as "all" | OrderStatus)}
+        onValueChange={(v) =>
+          setStatusFilter(v as "all" | OrderStatus | "deleted")
+        }
       >
         <TabsList
           data-ocid="orders.filter.tab"
@@ -333,18 +411,27 @@ export default function OrdersInvoices() {
           <TabsTrigger value={OrderStatus.delivered}>
             Delivered ({counts.delivered})
           </TabsTrigger>
+          {deletedCount > 0 && (
+            <TabsTrigger value="deleted" className="text-red-600">
+              Deleted ({counts.deleted})
+            </TabsTrigger>
+          )}
         </TabsList>
       </Tabs>
 
       {/* Orders */}
       <div className="space-y-3">
         {filtered.map((order, i) => {
-          const sc = STATUS_COLORS[order.status];
+          const isDeleted = (order as any).isDeleted === true;
+          const sc = isDeleted
+            ? STATUS_COLORS.deleted
+            : STATUS_COLORS[order.status] || STATUS_COLORS.pending;
           return (
             <div
               key={order.id}
               data-ocid={i < 3 ? `orders.item.${i + 1}` : undefined}
               className="bg-white rounded-xl border border-border shadow-card p-4"
+              style={isDeleted ? { opacity: 0.75, borderColor: "#fecaca" } : {}}
             >
               <div className="flex flex-col sm:flex-row sm:items-start gap-4">
                 <div className="flex-1 min-w-0">
@@ -362,7 +449,8 @@ export default function OrdersInvoices() {
                       {sc.label}
                     </Badge>
                     {order.status === OrderStatus.delivered &&
-                      order.deliveredAt && (
+                      order.deliveredAt &&
+                      !isDeleted && (
                         <span className="text-xs text-muted-foreground">
                           Delivered: {formatDateTime(order.deliveredAt)}
                         </span>
@@ -387,9 +475,18 @@ export default function OrdersInvoices() {
                       Store: {order.storeNumber}
                     </span>
                   </div>
+                  {isDeleted && (order as any).deleteReason && (
+                    <div
+                      className="mt-2 px-3 py-2 rounded-lg text-xs"
+                      style={{ background: "#fee2e2", color: "#dc2626" }}
+                    >
+                      <span className="font-semibold">Deletion Reason: </span>
+                      {(order as any).deleteReason}
+                    </div>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2 sm:flex-col sm:items-end">
-                  {order.status === OrderStatus.pending && (
+                  {!isDeleted && order.status === OrderStatus.pending && (
                     <Button
                       data-ocid={i === 0 ? "orders.accept.button.1" : undefined}
                       size="sm"
@@ -401,7 +498,7 @@ export default function OrdersInvoices() {
                       <CheckCircle2 size={14} className="mr-1" /> Accept Order
                     </Button>
                   )}
-                  {order.status === OrderStatus.accepted && (
+                  {!isDeleted && order.status === OrderStatus.accepted && (
                     <Button
                       data-ocid={
                         i === 0 ? "orders.deliver.button.1" : undefined
@@ -415,76 +512,58 @@ export default function OrdersInvoices() {
                       <Truck size={14} className="mr-1" /> Mark Delivered
                     </Button>
                   )}
-                  <Button
-                    data-ocid={
-                      i === 0 ? "orders.invoice_print.button.1" : undefined
-                    }
-                    size="sm"
-                    variant="outline"
-                    onClick={() => printInvoice(order)}
-                  >
-                    <Printer size={14} className="mr-1" /> Print
-                  </Button>
-                  <Button
-                    data-ocid={
-                      i === 0 ? "orders.invoice_download.button.1" : undefined
-                    }
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      printInvoice(order);
-                      toast.success("Invoice opening for download");
-                    }}
-                  >
-                    <Download size={14} className="mr-1" /> Invoice
-                  </Button>
+                  {!isDeleted && (
+                    <Button
+                      data-ocid={
+                        i === 0 ? "orders.invoice_print.button.1" : undefined
+                      }
+                      size="sm"
+                      variant="outline"
+                      onClick={() => printInvoice(order)}
+                    >
+                      <Printer size={14} className="mr-1" /> Print
+                    </Button>
+                  )}
+                  {!isDeleted && (
+                    <Button
+                      data-ocid={
+                        i === 0 ? "orders.invoice_download.button.1" : undefined
+                      }
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        printInvoice(order);
+                        toast.success("Invoice opening for download");
+                      }}
+                    >
+                      <Download size={14} className="mr-1" /> PDF
+                    </Button>
+                  )}
+                  {!isDeleted && (
+                    <Button
+                      data-ocid={i === 0 ? "orders.delete_button.1" : undefined}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => openDeleteDialog(order.id)}
+                      className="border-red-200 text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 size={14} className="mr-1" /> Delete
+                    </Button>
+                  )}
                 </div>
               </div>
-
-              {/* Items Accordion */}
-              <details className="mt-3">
-                <summary className="text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
-                  View {order.items.length} items &rarr;
-                </summary>
-                <div className="mt-2 overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr style={{ background: "#f8fafc" }}>
-                        <th className="text-left px-3 py-2">Product</th>
-                        <th className="text-center px-3 py-2">Unit</th>
-                        <th className="text-center px-3 py-2">Qty</th>
-                        <th className="text-right px-3 py-2">Rate</th>
-                        <th className="text-right px-3 py-2">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {order.items.map((item, j) => (
-                        <tr
-                          key={`${item.productId}-${j}`}
-                          className="border-t border-border"
-                        >
-                          <td className="px-3 py-1.5">{item.productName}</td>
-                          <td className="px-3 py-1.5 text-center">
-                            {item.unit}
-                          </td>
-                          <td className="px-3 py-1.5 text-center">
-                            {item.quantity}
-                          </td>
-                          <td className="px-3 py-1.5 text-right">
-                            {formatCurrency(item.rate)}
-                          </td>
-                          <td className="px-3 py-1.5 text-right font-semibold">
-                            {formatCurrency(item.amount)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </details>
             </div>
           );
         })}
+        {filtered.length === 0 && (
+          <div
+            data-ocid="orders.empty_state"
+            className="text-center py-16 rounded-xl bg-white border border-border"
+          >
+            <Package size={40} className="mx-auto mb-3 text-muted-foreground" />
+            <p className="text-muted-foreground">No orders found.</p>
+          </div>
+        )}
       </div>
     </div>
   );

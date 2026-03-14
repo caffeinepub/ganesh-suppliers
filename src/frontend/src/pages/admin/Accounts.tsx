@@ -1,29 +1,36 @@
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Banknote, ChevronDown, CreditCard, FileText } from "lucide-react";
+import {
+  Banknote,
+  Check,
+  ChevronDown,
+  ChevronsUpDown,
+  CreditCard,
+  FileText,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import type { Payment } from "../../backend.d";
+
 import { OrderStatus, PaymentMethod } from "../../backend.d";
-import {
-  formatCurrency,
-  formatDate,
-  formatDateTime,
-  mockCompanyProfile,
-  mockCustomers,
-  mockOrders,
-  mockPayments,
-} from "../../mockData";
+import type { Order, Payment as PaymentType } from "../../backend.d";
+import { useDataStore } from "../../dataStore";
+import { formatCurrency, formatDate, formatDateTime } from "../../mockData";
 
 function getQuickRange(range: string): { from: string; to: string } {
   const now = new Date();
@@ -61,6 +68,8 @@ function buildStatement(
   customerId: string,
   from: string,
   to: string,
+  allOrders: Order[],
+  allPayments: PaymentType[],
 ): {
   entries: StatementEntry[];
   openingBalance: number;
@@ -69,16 +78,18 @@ function buildStatement(
   const fromTs = new Date(from).getTime();
   const toTs = new Date(to).getTime() + 86400000;
 
-  const deliveredOrders = mockOrders.filter(
+  // Exclude deleted orders from accounts
+  const deliveredOrders = allOrders.filter(
     (o) =>
       o.customerId === customerId &&
       o.status === OrderStatus.delivered &&
+      !(o as any).isDeleted &&
       o.deliveredAt &&
       Number(o.deliveredAt) >= fromTs &&
       Number(o.deliveredAt) <= toTs,
   );
 
-  const payments = mockPayments.filter(
+  const payments = allPayments.filter(
     (p) =>
       p.customerId === customerId &&
       Number(p.recordedAt) >= fromTs &&
@@ -126,10 +137,75 @@ function buildStatement(
   return { entries, openingBalance, closingBalance: balance };
 }
 
-export default function Accounts() {
-  const [payments, setPayments] = useState<Payment[]>(() =>
-    mockPayments.map((p) => ({ ...p })),
+// Searchable customer combobox
+function CustomerCombobox({
+  value,
+  onValueChange,
+  customers,
+  placeholder = "Search customer...",
+  ocid,
+}: {
+  value: string;
+  onValueChange: (v: string) => void;
+  customers: Array<{ id: string; companyName: string; storeNumber: string }>;
+  placeholder?: string;
+  ocid?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = customers.find((c) => c.id === value);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          data-ocid={ocid}
+          className="w-full justify-between mt-1 font-normal"
+        >
+          {selected
+            ? `${selected.companyName} (${selected.storeNumber})`
+            : placeholder}
+          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[320px] p-0" align="start">
+        <Command>
+          <CommandInput placeholder="Type name or store no..." />
+          <CommandList>
+            <CommandEmpty>No customer found.</CommandEmpty>
+            <CommandGroup>
+              {customers.map((c) => (
+                <CommandItem
+                  key={c.id}
+                  value={`${c.companyName} ${c.storeNumber}`}
+                  onSelect={() => {
+                    onValueChange(c.id);
+                    setOpen(false);
+                  }}
+                >
+                  <Check
+                    className={`mr-2 h-4 w-4 ${
+                      value === c.id ? "opacity-100" : "opacity-0"
+                    }`}
+                  />
+                  <span className="font-medium">{c.companyName}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">
+                    {c.storeNumber}
+                  </span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
   );
+}
+
+export default function Accounts() {
+  const { customers, orders, payments, addPayment, profile } = useDataStore();
 
   // Statement state
   const [stmtCustomer, setStmtCustomer] = useState("");
@@ -161,7 +237,13 @@ export default function Accounts() {
       toast.error("Please select a customer");
       return;
     }
-    const result = buildStatement(stmtCustomer, stmtFrom, stmtTo);
+    const result = buildStatement(
+      stmtCustomer,
+      stmtFrom,
+      stmtTo,
+      orders,
+      payments,
+    );
     setStmtResult(result);
   };
 
@@ -184,8 +266,8 @@ export default function Accounts() {
     }
     setPayLoading(true);
     await new Promise((r) => setTimeout(r, 600));
-    const customer = mockCustomers.find((c) => c.id === payCustomer);
-    const np: Payment = {
+    const customer = customers.find((c) => c.id === payCustomer);
+    const np: PaymentType = {
       id: `pay${Date.now()}`,
       customerId: payCustomer,
       storeNumber: customer?.storeNumber || "",
@@ -196,15 +278,14 @@ export default function Accounts() {
       recordedAt: BigInt(Date.now()),
       notes: "",
     };
-    setPayments((ps) => [np, ...ps]);
+    addPayment(np);
     setPayAmount("");
     setPayRef("");
     toast.success("Payment recorded successfully!");
     setPayLoading(false);
   };
 
-  const selectedCustomer = mockCustomers.find((c) => c.id === stmtCustomer);
-  const profile = mockCompanyProfile;
+  const selectedCustomer = customers.find((c) => c.id === stmtCustomer);
 
   return (
     <div data-ocid="accounts.section" className="p-4 lg:p-6">
@@ -239,21 +320,13 @@ export default function Accounts() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <Label>Select Customer</Label>
-                <Select value={stmtCustomer} onValueChange={setStmtCustomer}>
-                  <SelectTrigger
-                    data-ocid="accounts.statement.customer_select"
-                    className="mt-1"
-                  >
-                    <SelectValue placeholder="Choose customer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {mockCustomers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.companyName} ({c.storeNumber})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <CustomerCombobox
+                  value={stmtCustomer}
+                  onValueChange={setStmtCustomer}
+                  customers={customers}
+                  placeholder="Search customer..."
+                  ocid="accounts.statement.customer_select"
+                />
               </div>
               <div>
                 <Label>From Date</Label>
@@ -529,8 +602,14 @@ export default function Accounts() {
 
           {/* All customers merged */}
           <div className="space-y-4">
-            {mockCustomers.slice(0, 8).map((customer) => {
-              const result = buildStatement(customer.id, stmtFrom, stmtTo);
+            {customers.map((customer) => {
+              const result = buildStatement(
+                customer.id,
+                stmtFrom,
+                stmtTo,
+                orders,
+                payments,
+              );
               if (result.entries.length === 0) return null;
               return (
                 <div
@@ -614,21 +693,13 @@ export default function Accounts() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <Label>Customer</Label>
-                <Select value={payCustomer} onValueChange={setPayCustomer}>
-                  <SelectTrigger
-                    data-ocid="accounts.payment.customer_select"
-                    className="mt-1"
-                  >
-                    <SelectValue placeholder="Select customer" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {mockCustomers.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.companyName} ({c.storeNumber})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <CustomerCombobox
+                  value={payCustomer}
+                  onValueChange={setPayCustomer}
+                  customers={customers}
+                  placeholder="Search customer..."
+                  ocid="accounts.payment.customer_select"
+                />
               </div>
               <div>
                 <Label>Amount (₹)</Label>

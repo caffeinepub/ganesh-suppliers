@@ -14,15 +14,16 @@ import {
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import type { CompanyProfile } from "../../backend.d";
-import { mockCompanyProfile } from "../../mockData";
+import { useDataStore } from "../../dataStore";
 
 interface Props {
   onGoToCustomerPortal: () => void;
 }
 
 export default function Profile({ onGoToCustomerPortal }: Props) {
-  const [profile, setProfile] = useState<CompanyProfile>({
-    ...mockCompanyProfile,
+  const { profile, updateProfile } = useDataStore();
+  const [localProfile, setLocalProfile] = useState<CompanyProfile>({
+    ...profile,
   });
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [signPreview, setSignPreview] = useState<string | null>(null);
@@ -48,19 +49,28 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
   const handleSave = async () => {
     setSaving(true);
     await new Promise((r) => setTimeout(r, 800));
+
     if (newPass) {
       if (newPass !== confirmPass) {
         toast.error("Passwords don't match");
         setSaving(false);
         return;
       }
-      if (oldPass !== mockCompanyProfile.adminPasswordHash) {
+      // Verify old password via profile hash
+      if (oldPass !== profile.adminPasswordHash) {
         toast.error("Old password incorrect");
         setSaving(false);
         return;
       }
+      // Store new password in profile
+      localProfile.adminPasswordHash = newPass;
+      setOldPass("");
+      setNewPass("");
+      setConfirmPass("");
       toast.success("Password updated!");
     }
+
+    updateProfile(localProfile);
     toast.success("Profile saved successfully!");
     setSaving(false);
   };
@@ -135,9 +145,9 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
             <Input
               data-ocid="profile.company_name_input"
               id="co-name"
-              value={profile.companyName}
+              value={localProfile.companyName}
               onChange={(e) =>
-                setProfile((p) => ({ ...p, companyName: e.target.value }))
+                setLocalProfile((p) => ({ ...p, companyName: e.target.value }))
               }
               className="mt-1"
             />
@@ -147,9 +157,9 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
             <Input
               data-ocid="profile.gst_input"
               id="co-gst"
-              value={profile.gstNumber}
+              value={localProfile.gstNumber}
               onChange={(e) =>
-                setProfile((p) => ({ ...p, gstNumber: e.target.value }))
+                setLocalProfile((p) => ({ ...p, gstNumber: e.target.value }))
               }
               className="mt-1"
             />
@@ -159,9 +169,9 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
             <Input
               data-ocid="profile.contact_input"
               id="co-contact"
-              value={profile.contact}
+              value={localProfile.contact}
               onChange={(e) =>
-                setProfile((p) => ({ ...p, contact: e.target.value }))
+                setLocalProfile((p) => ({ ...p, contact: e.target.value }))
               }
               className="mt-1"
             />
@@ -172,9 +182,9 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
               data-ocid="profile.email_input"
               id="co-email"
               type="email"
-              value={profile.email}
+              value={localProfile.email}
               onChange={(e) =>
-                setProfile((p) => ({ ...p, email: e.target.value }))
+                setLocalProfile((p) => ({ ...p, email: e.target.value }))
               }
               className="mt-1"
             />
@@ -184,9 +194,9 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
             <Input
               data-ocid="profile.address_input"
               id="co-addr"
-              value={profile.address}
+              value={localProfile.address}
               onChange={(e) =>
-                setProfile((p) => ({ ...p, address: e.target.value }))
+                setLocalProfile((p) => ({ ...p, address: e.target.value }))
               }
               className="mt-1"
             />
@@ -201,7 +211,7 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
           <div>
             <Label>User ID</Label>
             <Input
-              value={profile.adminUserId}
+              value={localProfile.adminUserId}
               readOnly
               className="mt-1 bg-muted"
             />
@@ -250,6 +260,7 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
           size="sm"
           variant="outline"
           className="mt-3"
+          onClick={handleSave}
         >
           Update Password
         </Button>
@@ -263,9 +274,12 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
             <Label>Account Number</Label>
             <Input
               data-ocid="profile.bank_account_input"
-              value={profile.bankAccountNumber}
+              value={localProfile.bankAccountNumber}
               onChange={(e) =>
-                setProfile((p) => ({ ...p, bankAccountNumber: e.target.value }))
+                setLocalProfile((p) => ({
+                  ...p,
+                  bankAccountNumber: e.target.value,
+                }))
               }
               className="mt-1"
             />
@@ -273,9 +287,12 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
           <div>
             <Label>Account Name</Label>
             <Input
-              value={profile.bankAccountName}
+              value={localProfile.bankAccountName}
               onChange={(e) =>
-                setProfile((p) => ({ ...p, bankAccountName: e.target.value }))
+                setLocalProfile((p) => ({
+                  ...p,
+                  bankAccountName: e.target.value,
+                }))
               }
               className="mt-1"
             />
@@ -283,9 +300,9 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
           <div>
             <Label>Bank Name</Label>
             <Input
-              value={profile.bankName}
+              value={localProfile.bankName}
               onChange={(e) =>
-                setProfile((p) => ({ ...p, bankName: e.target.value }))
+                setLocalProfile((p) => ({ ...p, bankName: e.target.value }))
               }
               className="mt-1"
             />
@@ -294,9 +311,9 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
             <Label>IFSC Code</Label>
             <Input
               data-ocid="profile.ifsc_input"
-              value={profile.ifscCode}
+              value={localProfile.ifscCode}
               onChange={(e) =>
-                setProfile((p) => ({ ...p, ifscCode: e.target.value }))
+                setLocalProfile((p) => ({ ...p, ifscCode: e.target.value }))
               }
               className="mt-1"
             />
@@ -305,9 +322,9 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
             <Label>UPI ID</Label>
             <Input
               data-ocid="profile.upi_id_input"
-              value={profile.upiId}
+              value={localProfile.upiId}
               onChange={(e) =>
-                setProfile((p) => ({ ...p, upiId: e.target.value }))
+                setLocalProfile((p) => ({ ...p, upiId: e.target.value }))
               }
               className="mt-1"
             />
@@ -315,9 +332,9 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
           <div>
             <Label>Branch Name</Label>
             <Input
-              value={profile.branchName}
+              value={localProfile.branchName}
               onChange={(e) =>
-                setProfile((p) => ({ ...p, branchName: e.target.value }))
+                setLocalProfile((p) => ({ ...p, branchName: e.target.value }))
               }
               className="mt-1"
             />

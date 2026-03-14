@@ -82,6 +82,9 @@ export interface Order {
     companyName: string;
     customerId: string;
     items: Array<OrderItem>;
+    isDeleted: boolean;
+    deleteReason: string;
+    deletedAt?: Time;
 }
 export interface Customer {
     id: string;
@@ -124,9 +127,13 @@ export interface backendInterface {
     addProduct(product: Product): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     bulkImportProducts(productList: Array<Product>): Promise<void>;
+    bulkImportCustomers(customerList: Array<Customer>): Promise<void>;
     bulkToggleProducts(isActive: boolean): Promise<void>;
+    customerLogin(storeNumber: string, password: string): Promise<Customer | null>;
+    adminVerify(password: string): Promise<boolean>;
     deleteCustomer(storeNumber: string): Promise<void>;
     deleteProduct(productId: string): Promise<void>;
+    deleteOrder(orderId: string, reason: string): Promise<void>;
     editCustomer(storeNumber: string, customer: Customer): Promise<void>;
     editProduct(productId: string, product: Product): Promise<void>;
     getActiveProducts(): Promise<Array<Product>>;

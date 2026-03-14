@@ -32,7 +32,8 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import type { Customer } from "../../backend.d";
-import { formatDate, mockCustomers } from "../../mockData";
+import { useDataStore } from "../../dataStore";
+import { formatDate } from "../../mockData";
 
 const blankCustomer = (): Partial<Customer> => ({
   storeNumber: "",
@@ -67,9 +68,13 @@ function downloadCSV(content: string, filename: string) {
 }
 
 export default function Customers() {
-  const [customers, setCustomers] = useState<Customer[]>(() =>
-    mockCustomers.map((c) => ({ ...c })),
-  );
+  const {
+    customers,
+    addCustomer,
+    updateCustomer,
+    deleteCustomer,
+    toggleCustomer,
+  } = useDataStore();
   const [search, setSearch] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
@@ -101,11 +106,10 @@ export default function Customers() {
       return;
     }
     if (editCustomer) {
-      setCustomers((cs) =>
-        cs.map((c) =>
-          c.id === editCustomer.id ? ({ ...c, ...form } as Customer) : c,
-        ),
-      );
+      updateCustomer(editCustomer.storeNumber, {
+        ...editCustomer,
+        ...form,
+      } as Customer);
       toast.success("Customer updated!");
     } else {
       if (customers.some((c) => c.storeNumber === form.storeNumber)) {
@@ -118,7 +122,7 @@ export default function Customers() {
         isActive: true,
         ...form,
       } as Customer;
-      setCustomers((cs) => [nc, ...cs]);
+      addCustomer(nc);
       toast.success("Customer added!");
     }
     setFormOpen(false);
@@ -126,15 +130,13 @@ export default function Customers() {
 
   const handleDelete = () => {
     if (!deleteTarget) return;
-    setCustomers((cs) => cs.filter((c) => c.id !== deleteTarget.id));
+    deleteCustomer(deleteTarget.storeNumber);
     toast.success("Customer deleted");
     setDeleteTarget(null);
   };
 
-  const toggleStatus = (id: string) => {
-    setCustomers((cs) =>
-      cs.map((c) => (c.id === id ? { ...c, isActive: !c.isActive } : c)),
-    );
+  const toggleStatus = (storeNumber: string) => {
+    toggleCustomer(storeNumber);
   };
 
   return (
@@ -270,7 +272,7 @@ export default function Customers() {
                         i === 0 ? "customers.status.toggle.1" : undefined
                       }
                       checked={c.isActive}
-                      onCheckedChange={() => toggleStatus(c.id)}
+                      onCheckedChange={() => toggleStatus(c.storeNumber)}
                       className="data-[state=checked]:bg-green-500"
                     />
                   </td>
@@ -317,6 +319,11 @@ export default function Customers() {
               <UserCheck size={18} />
               {editCustomer ? "Edit Customer" : "Add New Customer"}
             </DialogTitle>
+            <DialogDescription>
+              {editCustomer
+                ? "Update customer details below."
+                : "Fill in the details to add a new customer."}
+            </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-4 py-2">
             <div className="col-span-2">

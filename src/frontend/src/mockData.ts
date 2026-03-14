@@ -1187,6 +1187,8 @@ const makeOrder = (
     })),
     createdAt,
     deliveredAt,
+    isDeleted: false,
+    deleteReason: "",
   };
 };
 

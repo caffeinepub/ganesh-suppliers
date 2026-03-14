@@ -32,7 +32,8 @@ import {
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Product } from "../../backend.d";
-import { formatCurrency, mockProducts } from "../../mockData";
+import { useDataStore } from "../../dataStore";
+import { formatCurrency } from "../../mockData";
 
 const blankProduct = (): Omit<Product, "id" | "createdAt"> => ({
   name: "",
@@ -61,9 +62,8 @@ function downloadCSV(content: string, filename: string) {
 }
 
 export default function Products() {
-  const [products, setProducts] = useState<Product[]>(() =>
-    mockProducts.map((p) => ({ ...p })),
-  );
+  const { products, addProduct, updateProduct, toggleProduct, setProducts } =
+    useDataStore();
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [addOpen, setAddOpen] = useState(false);
@@ -103,9 +103,7 @@ export default function Products() {
       return;
     }
     if (editProduct) {
-      setProducts((ps) =>
-        ps.map((p) => (p.id === editProduct.id ? { ...p, ...form } : p)),
-      );
+      updateProduct(editProduct.id, { ...editProduct, ...form });
       toast.success("Product updated!");
     } else {
       const np: Product = {
@@ -113,16 +111,14 @@ export default function Products() {
         createdAt: BigInt(Date.now()),
         ...form,
       };
-      setProducts((ps) => [np, ...ps]);
+      addProduct(np);
       toast.success("Product added!");
     }
     setAddOpen(false);
   };
 
   const toggleStatus = (id: string) => {
-    setProducts((ps) =>
-      ps.map((p) => (p.id === id ? { ...p, isActive: !p.isActive } : p)),
-    );
+    toggleProduct(id);
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -198,7 +194,7 @@ export default function Products() {
           size="sm"
           variant="outline"
           onClick={() => {
-            setProducts((ps) => ps.map((p) => ({ ...p, isActive: true })));
+            setProducts(products.map((p) => ({ ...p, isActive: true })));
             toast.success("All products activated");
           }}
           className="text-green-600 border-green-200 hover:bg-green-50"
@@ -210,7 +206,7 @@ export default function Products() {
           size="sm"
           variant="outline"
           onClick={() => {
-            setProducts((ps) => ps.map((p) => ({ ...p, isActive: false })));
+            setProducts(products.map((p) => ({ ...p, isActive: false })));
             toast.success("All products deactivated");
           }}
           className="text-red-500 border-red-200 hover:bg-red-50"

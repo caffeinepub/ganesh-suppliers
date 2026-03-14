@@ -1,12 +1,12 @@
+// This file is kept for backward compatibility.
+// All order management now goes through dataStore.tsx with localStorage persistence.
 import type { Order } from "./backend.d";
-import { mockOrders } from "./mockData";
 
-const newOrders: Order[] = [];
-
-export function addCustomerOrder(order: Order) {
-  newOrders.push(order);
+export function addCustomerOrder(_order: Order) {
+  // No-op: use useDataStore().addOrder instead
 }
 
 export function getAllOrdersWithCustomer(): Order[] {
-  return [...mockOrders, ...newOrders];
+  // No-op: use useDataStore().orders instead
+  return [];
 }

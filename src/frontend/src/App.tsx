@@ -1,13 +1,14 @@
 import { Toaster } from "@/components/ui/sonner";
 import { useState } from "react";
 import type { Customer } from "./backend.d";
+import { DataStoreProvider } from "./dataStore";
 import LoginPage from "./pages/LoginPage";
 import AdminLayout from "./pages/admin/AdminLayout";
 import CustomerLayout from "./pages/customer/CustomerLayout";
 
 export type AppView = "login" | "admin" | "customer";
 
-export default function App() {
+function AppInner() {
   const [view, setView] = useState<AppView>("login");
   const [loggedInCustomer, setLoggedInCustomer] = useState<Customer | null>(
     null,
@@ -48,5 +49,13 @@ export default function App() {
       />
       <Toaster richColors position="top-right" />
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <DataStoreProvider>
+      <AppInner />
+    </DataStoreProvider>
   );
 }

@@ -3,24 +3,23 @@ import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronUp, Download, Printer } from "lucide-react";
 import { useState } from "react";
 import type { Customer } from "../../backend.d";
-import { getAllOrdersWithCustomer } from "../../customerOrderStore";
-import {
-  formatCurrency,
-  formatDate,
-  formatDateTime,
-  mockCompanyProfile,
-} from "../../mockData";
+import { useDataStore } from "../../dataStore";
+import { formatCurrency, formatDate, formatDateTime } from "../../mockData";
 
 interface Props {
   customer: Customer;
 }
 
 export default function CustomerCompletedOrders({ customer }: Props) {
+  const { orders, profile } = useDataStore();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  const allOrders = getAllOrdersWithCustomer();
-  const completedOrders = allOrders
-    .filter((o) => o.customerId === customer.id && o.status === "delivered")
+  const completedOrders = orders
+    .filter(
+      (o) =>
+        o.customerId === customer.id &&
+        (o.status === "delivered" || (o as any).isDeleted),
+    )
     .sort((a, b) => Number(b.createdAt) - Number(a.createdAt));
 
   const toggleExpand = (id: string) => {
@@ -68,11 +67,11 @@ export default function CustomerCompletedOrders({ customer }: Props) {
 <body>
   <div class="header">
     <div>
-      <div class="company-name">${mockCompanyProfile.companyName}</div>
+      <div class="company-name">${profile.companyName}</div>
       <div class="company-details">
-        ${mockCompanyProfile.address}<br>
-        GST: ${mockCompanyProfile.gstNumber} | Tel: ${mockCompanyProfile.contact}<br>
-        Email: ${mockCompanyProfile.email}
+        ${profile.address}<br>
+        GST: ${profile.gstNumber} | Tel: ${profile.contact}<br>
+        Email: ${profile.email}
       </div>
     </div>
     <div>
@@ -130,14 +129,14 @@ export default function CustomerCompletedOrders({ customer }: Props) {
     </tbody>
   </table>
   <div class="payment-section">
-    <strong>Bank Details:</strong> ${mockCompanyProfile.bankName} | A/C: ${mockCompanyProfile.bankAccountNumber} | IFSC: ${mockCompanyProfile.ifscCode} | UPI: ${mockCompanyProfile.upiId}
+    <strong>Bank Details:</strong> ${profile.bankName} | A/C: ${profile.bankAccountNumber} | IFSC: ${profile.ifscCode} | UPI: ${profile.upiId}
   </div>
   <div class="signature">
     <p>Authorised Signatory</p>
-    <p style="margin-top: 30px; font-weight: bold;">${mockCompanyProfile.companyName}</p>
+    <p style="margin-top: 30px; font-weight: bold;">${profile.companyName}</p>
   </div>
   <div class="footer">
-    Thank you for your business! | ${mockCompanyProfile.companyName} | ${mockCompanyProfile.contact}
+    Thank you for your business! | ${profile.companyName} | ${profile.contact}
   </div>
 </body>
 </html>`;
@@ -166,6 +165,8 @@ export default function CustomerCompletedOrders({ customer }: Props) {
   };
 
   const paymentBadge = (order: (typeof completedOrders)[0]) => {
+    if ((order as any).isDeleted)
+      return { label: "Deleted", bg: "#fee2e2", color: "#dc2626" };
     const pm = (order as any).paymentMethod || "pay_later";
     if (pm === "upi_advance")
       return { label: "UPI Advance", bg: "#dbeafe", color: "#1e40af" };
@@ -206,8 +207,11 @@ export default function CustomerCompletedOrders({ customer }: Props) {
                 className="rounded-xl overflow-hidden"
                 style={{
                   background: "#fff",
-                  border: "1px solid #e2e8f0",
+                  border: (order as any).isDeleted
+                    ? "1px solid #fecaca"
+                    : "1px solid #e2e8f0",
                   boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
+                  opacity: (order as any).isDeleted ? 0.8 : 1,
                 }}
               >
                 <div className="p-4 flex flex-wrap items-center gap-3">
@@ -221,6 +225,15 @@ export default function CustomerCompletedOrders({ customer }: Props) {
                         ? ` · Delivered: ${formatDate(order.deliveredAt)}`
                         : ""}
                     </p>
+                    {(order as any).isDeleted &&
+                      (order as any).deleteReason && (
+                        <p
+                          className="text-xs mt-1"
+                          style={{ color: "#dc2626" }}
+                        >
+                          Deleted: {(order as any).deleteReason}
+                        </p>
+                      )}
                   </div>
                   <Badge
                     style={{
@@ -241,24 +254,28 @@ export default function CustomerCompletedOrders({ customer }: Props) {
                     {formatCurrency(order.totalAmount)}
                   </span>
                   <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      data-ocid={`completed-orders.print.button.${idx + 1}`}
-                      onClick={() => handlePrint(order)}
-                      className="h-8 gap-1.5"
-                    >
-                      <Printer size={14} /> Print
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      data-ocid={`completed-orders.download.button.${idx + 1}`}
-                      onClick={() => handleDownloadPdf(order)}
-                      className="h-8 gap-1.5"
-                    >
-                      <Download size={14} /> PDF
-                    </Button>
+                    {!(order as any).isDeleted && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          data-ocid={`completed-orders.print.button.${idx + 1}`}
+                          onClick={() => handlePrint(order)}
+                          className="h-8 gap-1.5"
+                        >
+                          <Printer size={14} /> Print
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          data-ocid={`completed-orders.download.button.${idx + 1}`}
+                          onClick={() => handleDownloadPdf(order)}
+                          className="h-8 gap-1.5"
+                        >
+                          <Download size={14} /> PDF
+                        </Button>
+                      </>
+                    )}
                     <button
                       type="button"
                       onClick={() => toggleExpand(order.id)}

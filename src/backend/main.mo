@@ -1,39 +1,29 @@
 import Runtime "mo:core/Runtime";
-import List "mo:core/List";
 import Text "mo:core/Text";
-import Nat "mo:core/Nat";
 import Time "mo:core/Time";
 import Int "mo:core/Int";
-import Iter "mo:core/Iter";
 import Map "mo:core/Map";
 import Order "mo:core/Order";
 import Principal "mo:core/Principal";
 
 import Storage "blob-storage/Storage";
-
 import MixinStorage "blob-storage/Mixin";
-import MixinAuthorization "authorization/MixinAuthorization";
-import AccessControl "authorization/access-control";
 
 actor {
   include MixinStorage();
 
-  // Authorization
-  type UserRole = AccessControl.UserRole;
-  type AccessControlState = AccessControl.AccessControlState;
-  let accessControlState = AccessControl.initState();
-  include MixinAuthorization(accessControlState);
+  // ---------------------------------------------------------------------------
+  // Types
+  // ---------------------------------------------------------------------------
 
-  // User Profile Type
+  public type UserRole = { #admin; #user; #guest };
+
   public type UserProfile = {
     name : Text;
-    role : Text; // "admin" or "customer"
-    customerId : ?Text; // For customers, links to their customer record
+    role : Text;
+    customerId : ?Text;
   };
 
-  let userProfiles = Map.empty<Principal, UserProfile>();
-
-  // Product Types
   public type Product = {
     id : Text;
     name : Text;
@@ -44,12 +34,6 @@ actor {
     createdAt : Time.Time;
   };
 
-  // Comparison function for products by name
-  func compareProductsByName(product1 : Product, product2 : Product) : Order.Order {
-    Text.compare(product1.name, product2.name);
-  };
-
-  // Customer Types
   public type Customer = {
     id : Text;
     storeNumber : Text;
@@ -65,17 +49,7 @@ actor {
     userId : ?Text;
   };
 
-  // Comparison function for customers by store number
-  func compareCustomersByStoreNumber(customer1 : Customer, customer2 : Customer) : Order.Order {
-    Text.compare(customer1.storeNumber, customer2.storeNumber);
-  };
-
-  // Payment Types
-  public type PaymentMethod = {
-    #cash;
-    #online;
-    #cheque;
-  };
+  public type PaymentMethod = { #cash; #online; #cheque };
 
   public type Payment = {
     id : Text;
@@ -89,17 +63,7 @@ actor {
     notes : Text;
   };
 
-  // Comparison function for payments by recordedAt
-  func comparePaymentsByRecordedAt(payment1 : Payment, payment2 : Payment) : Order.Order {
-    Int.compare(payment1.recordedAt, payment2.recordedAt);
-  };
-
-  // Order Types
-  public type OrderStatus = {
-    #pending;
-    #accepted;
-    #delivered;
-  };
+  public type OrderStatus = { #pending; #accepted; #delivered };
 
   public type OrderItem = {
     productId : Text;
@@ -110,7 +74,8 @@ actor {
     amount : Float;
   };
 
-  public type Order = {
+  // V1 Order type (used only for migration from old canister state)
+  type OrderV1 = {
     id : Text;
     customerId : Text;
     storeNumber : Text;
@@ -124,12 +89,24 @@ actor {
     invoiceNumber : Text;
   };
 
-  // Comparison function for orders by createdAt
-  func compareOrdersByCreatedAt(order1 : Order, order2 : Order) : Order.Order {
-    Int.compare(order1.createdAt, order2.createdAt);
+  // Current Order type
+  public type Order = {
+    id : Text;
+    customerId : Text;
+    storeNumber : Text;
+    companyName : Text;
+    address : Text;
+    items : [OrderItem];
+    totalAmount : Float;
+    status : OrderStatus;
+    createdAt : Time.Time;
+    deliveredAt : ?Time.Time;
+    invoiceNumber : Text;
+    isDeleted : Bool;
+    deleteReason : Text;
+    deletedAt : ?Time.Time;
   };
 
-  // Company Profile
   public type CompanyProfile = {
     logoUrl : ?Storage.ExternalBlob;
     companyName : Text;
@@ -150,283 +127,6 @@ actor {
     appVersion : Text;
   };
 
-  var companyProfile : ?CompanyProfile = null;
-
-  // Data Storage
-  let products = Map.empty<Text, Product>();
-  let customers = Map.empty<Text, Customer>();
-  let orders = Map.empty<Text, Order>();
-  let payments = Map.empty<Text, Payment>();
-
-  // User Profile Functions
-  public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can access profiles");
-    };
-    userProfiles.get(caller);
-  };
-
-  public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
-    if (caller != user and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Can only view your own profile");
-    };
-    userProfiles.get(user);
-  };
-
-  public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can save profiles");
-    };
-    userProfiles.add(caller, profile);
-  };
-
-  // Product Functions
-  public shared ({ caller }) func addProduct(product : Product) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can add products");
-    };
-    products.add(product.id, product);
-  };
-
-  public shared ({ caller }) func editProduct(productId : Text, product : Product) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can edit products");
-    };
-    if (not products.containsKey(productId)) {
-      Runtime.trap("Product not found");
-    };
-    products.add(productId, product);
-  };
-
-  public shared ({ caller }) func deleteProduct(productId : Text) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can delete products");
-    };
-    products.remove(productId);
-  };
-
-  public shared ({ caller }) func bulkImportProducts(productList : [Product]) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can bulk import products");
-    };
-    for (product in productList.vals()) {
-      products.add(product.id, product);
-    };
-  };
-
-  public query ({ caller }) func getAllProducts() : async [Product] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only authenticated users can view products");
-    };
-    products.values().toArray().sort(compareProductsByName);
-  };
-
-  public query ({ caller }) func getActiveProducts() : async [Product] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only authenticated users can view products");
-    };
-    products.values().toArray().filter(func(p) { p.isActive }).sort(compareProductsByName);
-  };
-
-  public shared ({ caller }) func toggleProductState(productId : Text) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can toggle product state");
-    };
-    switch (products.get(productId)) {
-      case (null) { Runtime.trap("Product not found") };
-      case (?product) {
-        let updatedProduct = { product with isActive = not product.isActive };
-        products.add(productId, updatedProduct);
-      };
-    };
-  };
-
-  public shared ({ caller }) func bulkToggleProducts(isActive : Bool) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can bulk toggle products");
-    };
-    for ((id, product) in products.entries()) {
-      let updatedProduct = { product with isActive = isActive };
-      products.add(id, updatedProduct);
-    };
-  };
-
-  // Customer Functions
-  public shared ({ caller }) func addCustomer(customer : Customer) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can add customers");
-    };
-    if (customers.containsKey(customer.storeNumber)) {
-      Runtime.trap("Store number already exists");
-    };
-    customers.add(customer.storeNumber, customer);
-  };
-
-  public shared ({ caller }) func editCustomer(storeNumber : Text, customer : Customer) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can edit customers");
-    };
-    if (not customers.containsKey(storeNumber)) {
-      Runtime.trap("Customer not found");
-    };
-    customers.add(storeNumber, customer);
-  };
-
-  public shared ({ caller }) func deleteCustomer(storeNumber : Text) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can delete customers");
-    };
-    customers.remove(storeNumber);
-  };
-
-  public query ({ caller }) func getCustomers() : async [Customer] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can view all customers");
-    };
-    customers.values().toArray().sort(compareCustomersByStoreNumber);
-  };
-
-  public shared ({ caller }) func toggleCustomerState(storeNumber : Text) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can toggle customer state");
-    };
-    switch (customers.get(storeNumber)) {
-      case (null) { Runtime.trap("Customer not found") };
-      case (?customer) {
-        let updatedCustomer = { customer with isActive = not customer.isActive };
-        customers.add(storeNumber, updatedCustomer);
-      };
-    };
-  };
-
-  // Payment Functions
-  public shared ({ caller }) func addPayment(payment : Payment) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can add payments");
-    };
-    payments.add(payment.id, payment);
-  };
-
-  public query ({ caller }) func getPaymentsByCustomer(customerId : Text) : async [Payment] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only authenticated users can view payments");
-    };
-
-    // Verify caller is either admin or the customer themselves
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
-      switch (userProfiles.get(caller)) {
-        case (null) { Runtime.trap("User profile not found") };
-        case (?profile) {
-          switch (profile.customerId) {
-            case (null) { Runtime.trap("Unauthorized: Not a customer") };
-            case (?cid) {
-              if (cid != customerId) {
-                Runtime.trap("Unauthorized: Can only view your own payments");
-              };
-            };
-          };
-        };
-      };
-    };
-
-    payments.values().toArray().filter(func(p) { p.customerId == customerId }).sort(comparePaymentsByRecordedAt);
-  };
-
-  public query ({ caller }) func getAllPayments() : async [Payment] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can view all payments");
-    };
-    payments.values().toArray().sort(comparePaymentsByRecordedAt);
-  };
-
-  // Order Functions
-  public shared ({ caller }) func addOrder(order : Order) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only authenticated users can create orders");
-    };
-
-    // Verify caller is creating order for themselves (not admin bypass)
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
-      switch (userProfiles.get(caller)) {
-        case (null) { Runtime.trap("User profile not found") };
-        case (?profile) {
-          switch (profile.customerId) {
-            case (null) { Runtime.trap("Unauthorized: Not a customer") };
-            case (?cid) {
-              if (cid != order.customerId) {
-                Runtime.trap("Unauthorized: Can only create orders for yourself");
-              };
-            };
-          };
-        };
-      };
-    };
-
-    orders.add(order.id, order);
-  };
-
-  public query ({ caller }) func getOrdersByCustomer(customerId : Text) : async [Order] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only authenticated users can view orders");
-    };
-
-    // Verify caller is either admin or the customer themselves
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
-      switch (userProfiles.get(caller)) {
-        case (null) { Runtime.trap("User profile not found") };
-        case (?profile) {
-          switch (profile.customerId) {
-            case (null) { Runtime.trap("Unauthorized: Not a customer") };
-            case (?cid) {
-              if (cid != customerId) {
-                Runtime.trap("Unauthorized: Can only view your own orders");
-              };
-            };
-          };
-        };
-      };
-    };
-
-    orders.values().toArray().filter(func(o) { o.customerId == customerId }).sort(compareOrdersByCreatedAt);
-  };
-
-  public query ({ caller }) func getAllOrders() : async [Order] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can view all orders");
-    };
-    orders.values().toArray().sort(compareOrdersByCreatedAt);
-  };
-
-  public query ({ caller }) func getOrdersByStatus(status : OrderStatus) : async [Order] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can filter orders by status");
-    };
-    orders.values().toArray().filter(func(o) { o.status == status }).sort(compareOrdersByCreatedAt);
-  };
-
-  public shared ({ caller }) func updateOrderStatus(orderId : Text, newStatus : OrderStatus) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can update order status");
-    };
-    switch (orders.get(orderId)) {
-      case (null) { Runtime.trap("Order not found") };
-      case (?order) {
-        let deliveredAt = if (newStatus == #delivered) {
-          ?Time.now();
-        } else {
-          order.deliveredAt;
-        };
-        let updatedOrder = {
-          order with
-          status = newStatus;
-          deliveredAt = deliveredAt;
-        };
-        orders.add(orderId, updatedOrder);
-      };
-    };
-  };
-
-  // Dashboard Stats
   public type DashboardStats = {
     totalOrders : Nat;
     todayOrders : Nat;
@@ -436,11 +136,266 @@ actor {
     totalProducts : Nat;
   };
 
-  public query ({ caller }) func getDashboardStats() : async DashboardStats {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can view dashboard stats");
-    };
+  // ---------------------------------------------------------------------------
+  // Stable storage
+  //
+  // MIGRATION NOTES:
+  //   - accessControlState: absorbed from old canister (was created by MixinAuthorization);
+  //     kept here to prevent "cannot be implicitly discarded" error; never used.
+  //   - userProfiles: absorbed from old canister; kept here; never used.
+  //   - orders: the V1 stable var (old Order type, no isDeleted/deleteReason/deletedAt);
+  //     migrated to ordersV2 in postupgrade.
+  //   - ordersV2: current Order storage (with isDeleted etc.).
+  // ---------------------------------------------------------------------------
 
+  // Absorb old stable var: accessControlState (from MixinAuthorization, no longer used)
+  let accessControlState : { var adminAssigned : Bool; userRoles : Map.Map<Principal, UserRole> } = {
+    var adminAssigned = false;
+    userRoles = Map.empty<Principal, UserRole>();
+  };
+
+  // Absorb old stable var: userProfiles (no longer used)
+  let userProfiles = Map.empty<Principal, UserProfile>();
+
+  // Absorb old stable var: orders (V1 type, migrated to ordersV2 in postupgrade)
+  let orders = Map.empty<Text, OrderV1>();
+
+  // Current storage
+  let ordersV2 = Map.empty<Text, Order>();
+  let products = Map.empty<Text, Product>();
+  let customers = Map.empty<Text, Customer>();
+  let payments = Map.empty<Text, Payment>();
+  var companyProfile : ?CompanyProfile = null;
+
+  // Migrate V1 orders to current format after upgrade
+  system func postupgrade<system>() {
+    for ((id, o) in orders.entries()) {
+      ordersV2.add(
+        id,
+        {
+          id = o.id;
+          customerId = o.customerId;
+          storeNumber = o.storeNumber;
+          companyName = o.companyName;
+          address = o.address;
+          items = o.items;
+          totalAmount = o.totalAmount;
+          status = o.status;
+          createdAt = o.createdAt;
+          deliveredAt = o.deliveredAt;
+          invoiceNumber = o.invoiceNumber;
+          isDeleted = false;
+          deleteReason = "";
+          deletedAt = null;
+        },
+      );
+    };
+  };
+
+  // ---------------------------------------------------------------------------
+  // Sort helpers
+  // ---------------------------------------------------------------------------
+
+  func compareByName(a : Product, b : Product) : Order.Order {
+    Text.compare(a.name, b.name);
+  };
+
+  func compareCustomers(a : Customer, b : Customer) : Order.Order {
+    Text.compare(a.storeNumber, b.storeNumber);
+  };
+
+  func compareOrdersDesc(a : Order, b : Order) : Order.Order {
+    Int.compare(b.createdAt, a.createdAt);
+  };
+
+  func comparePayments(a : Payment, b : Payment) : Order.Order {
+    Int.compare(a.recordedAt, b.recordedAt);
+  };
+
+  // ---------------------------------------------------------------------------
+  // Product functions
+  // ---------------------------------------------------------------------------
+
+  public shared func addProduct(product : Product) : async () {
+    products.add(product.id, product);
+  };
+
+  public shared func editProduct(productId : Text, product : Product) : async () {
+    if (not products.containsKey(productId)) { Runtime.trap("Product not found") };
+    products.add(productId, product);
+  };
+
+  public shared func deleteProduct(productId : Text) : async () {
+    products.remove(productId);
+  };
+
+  public shared func bulkImportProducts(productList : [Product]) : async () {
+    for (p in productList.vals()) { products.add(p.id, p) };
+  };
+
+  public query func getAllProducts() : async [Product] {
+    products.values().toArray().sort(compareByName);
+  };
+
+  public query func getActiveProducts() : async [Product] {
+    products
+      .values()
+      .toArray()
+      .filter(func(p : Product) : Bool { p.isActive })
+      .sort(compareByName);
+  };
+
+  public shared func toggleProductState(productId : Text) : async () {
+    switch (products.get(productId)) {
+      case null { Runtime.trap("Product not found") };
+      case (?p) { products.add(productId, { p with isActive = not p.isActive }) };
+    };
+  };
+
+  public shared func bulkToggleProducts(isActive : Bool) : async () {
+    for ((id, p) in products.entries()) {
+      products.add(id, { p with isActive = isActive });
+    };
+  };
+
+  // ---------------------------------------------------------------------------
+  // Customer functions
+  // ---------------------------------------------------------------------------
+
+  public shared func addCustomer(customer : Customer) : async () {
+    if (customers.containsKey(customer.storeNumber)) {
+      Runtime.trap("Store number already exists");
+    };
+    customers.add(customer.storeNumber, customer);
+  };
+
+  public shared func editCustomer(storeNumber : Text, customer : Customer) : async () {
+    if (not customers.containsKey(storeNumber)) { Runtime.trap("Customer not found") };
+    customers.add(storeNumber, customer);
+  };
+
+  public shared func deleteCustomer(storeNumber : Text) : async () {
+    customers.remove(storeNumber);
+  };
+
+  public shared func bulkImportCustomers(customerList : [Customer]) : async () {
+    for (c in customerList.vals()) { customers.add(c.storeNumber, c) };
+  };
+
+  public query func getCustomers() : async [Customer] {
+    customers.values().toArray().sort(compareCustomers);
+  };
+
+  public shared func toggleCustomerState(storeNumber : Text) : async () {
+    switch (customers.get(storeNumber)) {
+      case null { Runtime.trap("Customer not found") };
+      case (?c) { customers.add(storeNumber, { c with isActive = not c.isActive }) };
+    };
+  };
+
+  public query func customerLogin(storeNumber : Text, password : Text) : async ?Customer {
+    switch (customers.get(storeNumber)) {
+      case null { null };
+      case (?c) {
+        if (c.passwordHash == password and c.isActive) { ?c } else { null };
+      };
+    };
+  };
+
+  // ---------------------------------------------------------------------------
+  // Order functions (all use ordersV2)
+  // ---------------------------------------------------------------------------
+
+  public shared func addOrder(order : Order) : async () {
+    ordersV2.add(order.id, order);
+  };
+
+  public query func getAllOrders() : async [Order] {
+    ordersV2.values().toArray().sort(compareOrdersDesc);
+  };
+
+  public query func getOrdersByCustomer(customerId : Text) : async [Order] {
+    ordersV2
+      .values()
+      .toArray()
+      .filter(func(o : Order) : Bool { o.customerId == customerId })
+      .sort(compareOrdersDesc);
+  };
+
+  public query func getOrdersByStatus(status : OrderStatus) : async [Order] {
+    ordersV2
+      .values()
+      .toArray()
+      .filter(func(o : Order) : Bool { o.status == status })
+      .sort(compareOrdersDesc);
+  };
+
+  public shared func updateOrderStatus(orderId : Text, newStatus : OrderStatus) : async () {
+    switch (ordersV2.get(orderId)) {
+      case null { Runtime.trap("Order not found") };
+      case (?o) {
+        let deliveredAt = if (newStatus == #delivered) { ?Time.now() } else { o.deliveredAt };
+        ordersV2.add(orderId, { o with status = newStatus; deliveredAt = deliveredAt });
+      };
+    };
+  };
+
+  public shared func deleteOrder(orderId : Text, reason : Text) : async () {
+    switch (ordersV2.get(orderId)) {
+      case null { Runtime.trap("Order not found") };
+      case (?o) {
+        ordersV2.add(
+          orderId,
+          { o with isDeleted = true; deleteReason = reason; deletedAt = ?Time.now() },
+        );
+      };
+    };
+  };
+
+  // ---------------------------------------------------------------------------
+  // Payment functions
+  // ---------------------------------------------------------------------------
+
+  public shared func addPayment(payment : Payment) : async () {
+    payments.add(payment.id, payment);
+  };
+
+  public query func getAllPayments() : async [Payment] {
+    payments.values().toArray().sort(comparePayments);
+  };
+
+  public query func getPaymentsByCustomer(customerId : Text) : async [Payment] {
+    payments
+      .values()
+      .toArray()
+      .filter(func(p : Payment) : Bool { p.customerId == customerId })
+      .sort(comparePayments);
+  };
+
+  // ---------------------------------------------------------------------------
+  // Company Profile
+  // ---------------------------------------------------------------------------
+
+  public shared func updateCompanyProfile(profile : CompanyProfile) : async () {
+    companyProfile := ?profile;
+  };
+
+  public query func getCompanyProfile() : async ?CompanyProfile {
+    companyProfile;
+  };
+
+  public query func adminVerify(password : Text) : async Bool {
+    switch (companyProfile) {
+      case null { password == "Admin@1234" };
+      case (?p) { p.adminPasswordHash == password };
+    };
+  };
+
+  // ---------------------------------------------------------------------------
+  // Dashboard
+  // ---------------------------------------------------------------------------
+
+  public query func getDashboardStats() : async DashboardStats {
     let now = Time.now();
     let oneDayNanos : Int = 24 * 60 * 60 * 1_000_000_000;
     let todayStart = now - oneDayNanos;
@@ -449,16 +404,18 @@ actor {
     var todayRevenue : Float = 0.0;
     var todayOrders : Nat = 0;
 
-    for (order in orders.values()) {
-      totalRevenue += order.totalAmount;
-      if (order.createdAt >= todayStart) {
-        todayRevenue += order.totalAmount;
-        todayOrders += 1;
+    for (o in ordersV2.values()) {
+      if (not o.isDeleted) {
+        totalRevenue += o.totalAmount;
+        if (o.createdAt >= todayStart) {
+          todayRevenue += o.totalAmount;
+          todayOrders += 1;
+        };
       };
     };
 
     {
-      totalOrders = orders.size();
+      totalOrders = ordersV2.size();
       todayOrders = todayOrders;
       todayRevenue = todayRevenue;
       totalRevenue = totalRevenue;
@@ -467,31 +424,19 @@ actor {
     };
   };
 
-  // Company Profile Functions
-  public shared ({ caller }) func updateCompanyProfile(profile : CompanyProfile) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can update company profile");
-    };
-    companyProfile := ?profile;
-  };
+  // ---------------------------------------------------------------------------
+  // Backward-compat stubs (referenced by backend.d.ts / old frontend bindings)
+  // ---------------------------------------------------------------------------
 
-  public query ({ caller }) func getCompanyProfile() : async ?CompanyProfile {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only authenticated users can view company profile");
-    };
-    companyProfile;
-  };
+  public shared ({ caller }) func assignCallerUserRole(_user : Principal, _role : UserRole) : async () {};
 
-  // Helper functions (kept for backward compatibility)
-  func assertAdmin(caller : Principal) {
-    if (not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Only admins can perform this action.");
-    };
-  };
+  public query ({ caller = _ }) func getCallerUserProfile() : async ?UserProfile { null };
 
-  func assertCustomer(caller : Principal) {
-    if (not AccessControl.hasPermission(accessControlState, caller, #user)) {
-      Runtime.trap("Unauthorized: Only customers can perform this action.");
-    };
-  };
+  public query ({ caller = _ }) func getCallerUserRole() : async UserRole { #guest };
+
+  public query ({ caller = _ }) func getUserProfile(_user : Principal) : async ?UserProfile { null };
+
+  public query ({ caller = _ }) func isCallerAdmin() : async Bool { false };
+
+  public shared ({ caller = _ }) func saveCallerUserProfile(_profile : UserProfile) : async () {};
 };

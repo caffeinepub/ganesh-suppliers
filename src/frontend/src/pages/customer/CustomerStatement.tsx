@@ -2,13 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Download, Printer } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Customer } from "../../backend.d";
-import { getAllOrdersWithCustomer } from "../../customerOrderStore";
-import {
-  formatCurrency,
-  formatDate,
-  mockCompanyProfile,
-  mockPayments,
-} from "../../mockData";
+import { useDataStore } from "../../dataStore";
+import { formatCurrency, formatDate } from "../../mockData";
 
 interface Props {
   customer: Customer;
@@ -60,16 +55,17 @@ export default function CustomerStatement({ customer }: Props) {
   const to = new Date(toDate);
   to.setHours(23, 59, 59, 999);
 
-  const allOrders = getAllOrdersWithCustomer();
+  const { orders: allOrders, payments: allPayments, profile } = useDataStore();
   const customerOrders = allOrders
     .filter((o) => o.customerId === customer.id)
+    .filter((o) => !(o as any).isDeleted)
     .filter((o) => {
       const d = new Date(Number(o.createdAt));
       return d >= from && d <= to;
     })
     .sort((a, b) => Number(a.createdAt) - Number(b.createdAt));
 
-  const customerPayments = mockPayments
+  const customerPayments = allPayments
     .filter((p) => p.customerId === customer.id)
     .filter((p) => {
       const d = new Date(Number(p.recordedAt));
@@ -154,8 +150,8 @@ export default function CustomerStatement({ customer }: Props) {
 <body>
   <div class="header">
     <div>
-      <div class="company-name">${mockCompanyProfile.companyName}</div>
-      <div class="company-details">${mockCompanyProfile.address}<br>GST: ${mockCompanyProfile.gstNumber} | Tel: ${mockCompanyProfile.contact}</div>
+      <div class="company-name">${profile.companyName}</div>
+      <div class="company-details">${profile.address}<br>GST: ${profile.gstNumber} | Tel: ${profile.contact}</div>
     </div>
     <div>
       <div class="statement-title">ACCOUNT STATEMENT</div>
@@ -189,7 +185,7 @@ export default function CustomerStatement({ customer }: Props) {
     </tbody>
   </table>
   <div class="footer">
-    ${mockCompanyProfile.companyName} | ${mockCompanyProfile.contact} | ${mockCompanyProfile.email}
+    ${profile.companyName} | ${profile.contact} | ${profile.email}
   </div>
 </body>
 </html>`;
