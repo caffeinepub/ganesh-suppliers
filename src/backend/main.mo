@@ -161,11 +161,11 @@ actor {
   let orders = Map.empty<Text, OrderV1>();
 
   // Current storage
-  let ordersV2 = Map.empty<Text, Order>();
-  let products = Map.empty<Text, Product>();
-  let customers = Map.empty<Text, Customer>();
-  let payments = Map.empty<Text, Payment>();
-  var companyProfile : ?CompanyProfile = null;
+  stable var ordersV2 = Map.empty<Text, Order>();
+  stable var products = Map.empty<Text, Product>();
+  stable var customers = Map.empty<Text, Customer>();
+  stable var payments = Map.empty<Text, Payment>();
+  stable var companyProfile : ?CompanyProfile = null;
 
   // Migrate V1 orders to current format after upgrade
   system func postupgrade<system>() {

@@ -2101,6 +2101,11 @@ export const mockPayments: Payment[] = [
   },
 ];
 
+// Default admin password
+export const DEFAULT_ADMIN_PASSWORD = "Admin@1234";
+// Legacy password used in early seeds - auto-migrated on load
+export const LEGACY_ADMIN_PASSWORD = "admin123";
+
 export const mockCompanyProfile: CompanyProfile = {
   companyName: "Ganesh Suppliers",
   gstNumber: "27AABCG1234A1Z5",
@@ -2114,7 +2119,7 @@ export const mockCompanyProfile: CompanyProfile = {
   upiId: "ganeshsuppliers@sbi",
   branchName: "APMC Vashi Branch",
   adminUserId: "admin",
-  adminPasswordHash: "admin123",
+  adminPasswordHash: "Admin@1234",
   appVersion: "v1.0.0",
 };
 

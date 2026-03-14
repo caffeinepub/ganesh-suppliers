@@ -20,6 +20,8 @@ import type {
 } from "./backend.d";
 import { createActorWithConfig } from "./config";
 import {
+  DEFAULT_ADMIN_PASSWORD,
+  LEGACY_ADMIN_PASSWORD,
   mockCompanyProfile,
   mockCustomers,
   mockOrders,
@@ -113,9 +115,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
           for (const payment of mockPayments) {
             await (actor as any).addPayment(payment);
           }
-          if (fetchedProfile === null) {
-            await (actor as any).updateCompanyProfile(mockCompanyProfile);
-          }
+          await (actor as any).updateCompanyProfile(mockCompanyProfile);
           // Re-fetch after seeding
           const [sc, sp, so, spay, sprof] = await Promise.all([
             (actor as any).getCustomers(),
@@ -142,7 +142,24 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
         setProductsState(fetchedProducts);
         setOrdersState(fetchedOrders as Order[]);
         setPaymentsState(fetchedPayments);
-        if (fetchedProfile) setProfileState(fetchedProfile);
+        if (fetchedProfile) {
+          // Migrate legacy password: if stored password is old default, update to Admin@1234
+          if (fetchedProfile.adminPasswordHash === LEGACY_ADMIN_PASSWORD) {
+            const migratedProfile = {
+              ...fetchedProfile,
+              adminPasswordHash: DEFAULT_ADMIN_PASSWORD,
+            };
+            setProfileState(migratedProfile);
+            try {
+              await (actor as any).updateCompanyProfile(migratedProfile);
+            } catch (migrateErr) {
+              console.error("Password migration failed", migrateErr);
+              setProfileState(fetchedProfile);
+            }
+          } else {
+            setProfileState(fetchedProfile);
+          }
+        }
       }
     } catch (err) {
       console.error("Failed to load data from backend", err);
