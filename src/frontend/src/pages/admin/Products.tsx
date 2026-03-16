@@ -1,3 +1,13 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,6 +36,7 @@ import {
   Package,
   Plus,
   Search,
+  Trash2,
   Upload,
   XCircle,
 } from "lucide-react";
@@ -62,13 +73,20 @@ function downloadCSV(content: string, filename: string) {
 }
 
 export default function Products() {
-  const { products, addProduct, updateProduct, toggleProduct, setProducts } =
-    useDataStore();
+  const {
+    products,
+    addProduct,
+    updateProduct,
+    toggleProduct,
+    setProducts,
+    deleteProduct,
+  } = useDataStore();
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<"grid" | "list">("list");
   const [addOpen, setAddOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [bulkUploadOpen, setBulkUploadOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<Product | null>(null);
   const [form, setForm] = useState<Omit<Product, "id" | "createdAt">>(
     blankProduct(),
   );
@@ -126,6 +144,13 @@ export default function Products() {
     if (!file) return;
     const url = URL.createObjectURL(file);
     setImagePreview(url);
+  };
+
+  const handleDeleteConfirm = () => {
+    if (!deleteConfirm) return;
+    deleteProduct(deleteConfirm.id);
+    toast.success(`"${deleteConfirm.name}" deleted.`);
+    setDeleteConfirm(null);
   };
 
   return (
@@ -254,6 +279,9 @@ export default function Products() {
                   <th className="text-center px-4 py-3 font-semibold text-muted-foreground">
                     Edit
                   </th>
+                  <th className="text-center px-4 py-3 font-semibold text-muted-foreground">
+                    Delete
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -302,6 +330,21 @@ export default function Products() {
                         <Edit2 size={14} />
                       </Button>
                     </td>
+                    <td className="px-4 py-3 text-center">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        data-ocid={
+                          i < 3
+                            ? `products.delete_button.${i + 1}`
+                            : "products.delete_button"
+                        }
+                        onClick={() => setDeleteConfirm(product)}
+                        className="h-7 px-2 text-red-500 hover:text-red-600 hover:bg-red-50"
+                      >
+                        <Trash2 size={14} />
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -338,19 +381,60 @@ export default function Products() {
                 >
                   {product.isActive ? "Active" : "Inactive"}
                 </Badge>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => openEdit(product)}
-                  className="h-6 px-1.5"
-                >
-                  <Edit2 size={12} />
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => openEdit(product)}
+                    className="h-6 px-1.5"
+                  >
+                    <Edit2 size={12} />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    data-ocid="products.delete_button"
+                    onClick={() => setDeleteConfirm(product)}
+                    className="h-6 px-1.5 text-red-500 hover:text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 size={12} />
+                  </Button>
+                </div>
               </div>
             </div>
           ))}
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog
+        open={!!deleteConfirm}
+        onOpenChange={(open) => {
+          if (!open) setDeleteConfirm(null);
+        }}
+      >
+        <AlertDialogContent data-ocid="products.delete.dialog">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Product</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete{" "}
+              <strong>{deleteConfirm?.name}</strong>? This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-ocid="products.delete.cancel_button">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-ocid="products.delete.confirm_button"
+              onClick={handleDeleteConfirm}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Add/Edit Product Dialog */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>

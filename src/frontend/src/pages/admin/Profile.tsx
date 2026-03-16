@@ -1,13 +1,26 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
+  AlertTriangle,
   Building2,
   CreditCard,
   ExternalLink,
   PenTool,
   Save,
+  Trash2,
   Upload,
   User,
 } from "lucide-react";
@@ -21,7 +34,7 @@ interface Props {
 }
 
 export default function Profile({ onGoToCustomerPortal }: Props) {
-  const { profile, updateProfile } = useDataStore();
+  const { profile, updateProfile, clearAllData } = useDataStore();
   const [localProfile, setLocalProfile] = useState<CompanyProfile>({
     ...profile,
   });
@@ -32,6 +45,7 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
   const [newPass, setNewPass] = useState("");
   const [confirmPass, setConfirmPass] = useState("");
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const logoRef = useRef<HTMLInputElement>(null);
   const signRef = useRef<HTMLInputElement>(null);
@@ -73,6 +87,18 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
     updateProfile(localProfile);
     toast.success("Profile saved successfully!");
     setSaving(false);
+  };
+
+  const handleResetAllData = async () => {
+    setResetting(true);
+    try {
+      await clearAllData();
+      toast.success("All data has been reset. The system is now clean.");
+    } catch {
+      toast.error("Failed to reset data. Please try again.");
+    } finally {
+      setResetting(false);
+    }
   };
 
   const SectionHeader = ({
@@ -420,6 +446,58 @@ export default function Profile({ onGoToCustomerPortal }: Props) {
             onChange={(e) => handleFilePreview(e, setSignPreview)}
           />
         </div>
+      </div>
+
+      {/* Danger Zone */}
+      <div className="bg-white rounded-xl border-2 border-red-200 shadow-card p-5">
+        <div className="flex items-center gap-2 mb-2">
+          <AlertTriangle size={18} className="text-red-500" />
+          <h3 className="font-semibold text-red-600">Danger Zone</h3>
+        </div>
+        <p className="text-sm text-muted-foreground mb-4">
+          Permanently delete all customers, products, orders, and payments. Your
+          admin login and company name will be preserved. This action cannot be
+          undone.
+        </p>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              data-ocid="profile.reset_data.open_modal_button"
+              variant="destructive"
+              size="sm"
+              className="gap-2"
+              disabled={resetting}
+            >
+              <Trash2 size={14} />
+              {resetting ? "Resetting..." : "Reset All Data"}
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent data-ocid="profile.reset_data.dialog">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="text-red-600 flex items-center gap-2">
+                <AlertTriangle size={18} /> Are you absolutely sure?
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                This will permanently delete ALL customers, products, orders,
+                and payments from the system. Your admin login
+                (pushpak38517@gmail.com) and company name will be kept. This
+                cannot be undone.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-ocid="profile.reset_data.cancel_button">
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                data-ocid="profile.reset_data.confirm_button"
+                onClick={handleResetAllData}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Yes, Reset Everything
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
 
       {/* Actions */}

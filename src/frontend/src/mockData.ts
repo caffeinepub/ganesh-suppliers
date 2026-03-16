@@ -2110,7 +2110,7 @@ export const mockCompanyProfile: CompanyProfile = {
   companyName: "Ganesh Suppliers",
   gstNumber: "27AABCG1234A1Z5",
   contact: "9876543210",
-  email: "admin@ganeshsuppliers.com",
+  email: "pushpak38517@gmail.com",
   address: "15, Wholesale Market, APMC, Navi Mumbai - 400614, Maharashtra",
   bankAccountNumber: "12345678901234",
   bankAccountName: "Ganesh Suppliers",
@@ -2118,7 +2118,7 @@ export const mockCompanyProfile: CompanyProfile = {
   ifscCode: "SBIN0001234",
   upiId: "ganeshsuppliers@sbi",
   branchName: "APMC Vashi Branch",
-  adminUserId: "admin",
+  adminUserId: "pushpak38517@gmail.com",
   adminPasswordHash: "Admin@1234",
   appVersion: "v1.0.0",
 };

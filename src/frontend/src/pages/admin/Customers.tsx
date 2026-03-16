@@ -112,7 +112,13 @@ export default function Customers() {
       } as Customer);
       toast.success("Customer updated!");
     } else {
-      if (customers.some((c) => c.storeNumber === form.storeNumber)) {
+      if (
+        customers.some(
+          (c) =>
+            c.storeNumber.toUpperCase() ===
+            (form.storeNumber || "").trim().toUpperCase(),
+        )
+      ) {
         toast.error("Store Number already exists");
         return;
       }
@@ -121,6 +127,9 @@ export default function Customers() {
         createdAt: BigInt(Date.now()),
         isActive: true,
         ...form,
+        // Normalize store number to uppercase for consistent login matching
+        storeNumber: (form.storeNumber || "").trim().toUpperCase(),
+        userId: form.userId ?? undefined,
       } as Customer;
       addCustomer(nc);
       toast.success("Customer added!");

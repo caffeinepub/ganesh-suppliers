@@ -1,6 +1,9 @@
 /**
  * Global Data Store backed by ICP backend canister.
  * All data reads and writes go through this store and are shared across devices.
+ *
+ * IMPORTANT: No demo/seed data is ever loaded automatically.
+ * The backend is the single source of truth. If it's empty, the app starts empty.
  */
 import React, {
   createContext,
@@ -23,10 +26,6 @@ import {
   DEFAULT_ADMIN_PASSWORD,
   LEGACY_ADMIN_PASSWORD,
   mockCompanyProfile,
-  mockCustomers,
-  mockOrders,
-  mockPayments,
-  mockProducts,
 } from "./mockData";
 
 // ---------------------------------------------------------------------------
@@ -65,6 +64,9 @@ interface DataStoreContextType {
   profile: CompanyProfile;
   updateProfile: (p: CompanyProfile) => void;
 
+  // Clear all data (admin use)
+  clearAllData: () => Promise<void>;
+
   // Refresh
   refreshData: () => Promise<void>;
 }
@@ -98,77 +100,32 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
         (actor as any).getCompanyProfile(),
       ]);
 
-      // Seed if empty
-      if (
-        fetchedCustomers.length === 0 &&
-        fetchedProducts.length === 0 &&
-        fetchedOrders.length === 0
-      ) {
-        try {
-          await Promise.all([
-            (actor as any).bulkImportCustomers(mockCustomers),
-            (actor as any).bulkImportProducts(mockProducts),
-          ]);
-          for (const order of mockOrders) {
-            await (actor as any).addOrder(order);
-          }
-          for (const payment of mockPayments) {
-            await (actor as any).addPayment(payment);
-          }
-          await (actor as any).updateCompanyProfile(mockCompanyProfile);
-          // Re-fetch after seeding
-          const [sc, sp, so, spay, sprof] = await Promise.all([
-            (actor as any).getCustomers(),
-            (actor as any).getAllProducts(),
-            (actor as any).getAllOrders(),
-            (actor as any).getAllPayments(),
-            (actor as any).getCompanyProfile(),
-          ]);
-          setCustomersState(sc);
-          setProductsState(sp);
-          setOrdersState(so);
-          setPaymentsState(spay);
-          if (sprof) setProfileState(sprof);
-        } catch (seedErr) {
-          console.error("Seeding failed", seedErr);
-          // Fall back to mock data in memory
-          setCustomersState(mockCustomers);
-          setProductsState(mockProducts);
-          setOrdersState(mockOrders);
-          setPaymentsState(mockPayments);
-        }
-      } else {
-        setCustomersState(fetchedCustomers);
-        setProductsState(fetchedProducts);
-        setOrdersState(fetchedOrders as Order[]);
-        setPaymentsState(fetchedPayments);
-        if (fetchedProfile) {
-          // Migrate legacy password: if stored password is old default, update to Admin@1234
-          if (fetchedProfile.adminPasswordHash === LEGACY_ADMIN_PASSWORD) {
-            const migratedProfile = {
-              ...fetchedProfile,
-              adminPasswordHash: DEFAULT_ADMIN_PASSWORD,
-            };
-            setProfileState(migratedProfile);
-            try {
-              await (actor as any).updateCompanyProfile(migratedProfile);
-            } catch (migrateErr) {
-              console.error("Password migration failed", migrateErr);
-              setProfileState(fetchedProfile);
-            }
-          } else {
+      setCustomersState(fetchedCustomers);
+      setProductsState(fetchedProducts);
+      setOrdersState(fetchedOrders as Order[]);
+      setPaymentsState(fetchedPayments);
+
+      if (fetchedProfile) {
+        // Migrate legacy password: if stored password is old default, update to Admin@1234
+        if (fetchedProfile.adminPasswordHash === LEGACY_ADMIN_PASSWORD) {
+          const migratedProfile = {
+            ...fetchedProfile,
+            adminPasswordHash: DEFAULT_ADMIN_PASSWORD,
+          };
+          setProfileState(migratedProfile);
+          try {
+            await (actor as any).updateCompanyProfile(migratedProfile);
+          } catch (migrateErr) {
+            console.error("Password migration failed", migrateErr);
             setProfileState(fetchedProfile);
           }
+        } else {
+          setProfileState(fetchedProfile);
         }
       }
     } catch (err) {
       console.error("Failed to load data from backend", err);
-      toast.error("Failed to load data. Using local fallback.");
-      // Fall back to mock data in memory
-      setCustomersState(mockCustomers);
-      setProductsState(mockProducts);
-      setOrdersState(mockOrders);
-      setPaymentsState(mockPayments);
+      toast.error("Failed to load data from server. Please refresh.");
     } finally {
       setLoading(false);
     }
@@ -182,6 +139,25 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     await fetchAll();
   }, [fetchAll]);
+
+  // --- Clear All Data ---
+  const clearAllData = useCallback(async () => {
+    try {
+      const actor = await createActorWithConfig();
+      await (actor as any).clearAllData();
+      setCustomersState([]);
+      setProductsState([]);
+      setOrdersState([]);
+      setPaymentsState([]);
+      // Refresh profile from backend after clear
+      const freshProfile = await (actor as any).getCompanyProfile();
+      if (freshProfile) setProfileState(freshProfile);
+    } catch (err) {
+      console.error("clearAllData failed", err);
+      toast.error("Failed to reset data.");
+      throw err;
+    }
+  }, []);
 
   // --- Customers ---
   const setCustomers = useCallback(async (cs: Customer[]) => {
@@ -329,7 +305,6 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
   // --- Orders ---
   const setOrders = useCallback(async (os: Order[]) => {
     setOrdersState(os);
-    // Bulk import orders one by one
     try {
       const actor = await createActorWithConfig();
       for (const o of os) {
@@ -498,6 +473,7 @@ export function DataStoreProvider({ children }: { children: ReactNode }) {
         setPayments,
         profile,
         updateProfile,
+        clearAllData,
         refreshData,
       }}
     >

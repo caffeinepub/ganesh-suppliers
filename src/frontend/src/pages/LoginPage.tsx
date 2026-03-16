@@ -15,8 +15,15 @@ interface Props {
   onCustomerLogin: (customer: Customer) => void;
 }
 
+/**
+ * Safely unwraps a ?Customer return from the ICP backend.
+ * The Caffeine SDK may return Motoko optionals in several formats:
+ *   - Customer | null  (ideal)
+ *   - [Customer] | []  (candid array format)
+ *   - { __kind__: "Some", value: Customer } | { __kind__: "None" }  (Option<T>)
+ */
 export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
-  const { profile } = useDataStore();
+  const { profile, customers } = useDataStore();
   const [mode, setMode] = useState<LoginMode>("landing");
   const [phase, setPhase] = useState(0);
   const [showPass, setShowPass] = useState(false);
@@ -44,7 +51,7 @@ export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
     e.preventDefault();
     setLoading(true);
     try {
-      const validEmail = profile.email || "admin@ganeshsuppliers.com";
+      const validEmail = profile.email || "pushpak38517@gmail.com";
       if (adminForm.email !== validEmail) {
         toast.error("Invalid credentials.");
         setLoading(false);
@@ -67,7 +74,7 @@ export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
     } catch (err) {
       console.error("Admin login error", err);
       // Fallback: compare locally
-      const validEmail = profile.email || "admin@ganeshsuppliers.com";
+      const validEmail = profile.email || "pushpak38517@gmail.com";
       if (
         adminForm.email === validEmail &&
         adminForm.password === profile.adminPasswordHash
@@ -85,21 +92,54 @@ export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
   const handleCustomerLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    try {
-      const actor = await createActorWithConfig();
-      const customer = (await (actor as any).customerLogin(
-        customerForm.storeNumber,
-        customerForm.password,
-      )) as Customer | null;
-      if (customer) {
-        toast.success(`Welcome, ${customer.companyName}!`);
-        onCustomerLogin(customer);
-      } else {
-        toast.error("Invalid store number or password.");
+    // Normalize store number: trim whitespace and uppercase for consistent matching
+    const storeNum = customerForm.storeNumber.trim().toUpperCase();
+    const pass = customerForm.password;
+
+    const matchCustomer = (list: Customer[]): Customer | undefined =>
+      list.find(
+        (c) =>
+          c.storeNumber.trim().toUpperCase() === storeNum &&
+          c.passwordHash === pass,
+      );
+
+    const loginWith = (c: Customer) => {
+      if (!c.isActive) {
+        toast.error("Your account has been deactivated. Please contact admin.");
+        return false;
       }
+      toast.success(`Welcome, ${c.companyName || c.customerName}!`);
+      onCustomerLogin(c);
+      return true;
+    };
+
+    try {
+      // Primary: fetch fresh customer list from backend (plain array — no optional unwrapping needed)
+      const actor = await createActorWithConfig();
+      const allCustomers: Customer[] = await (actor as any).getCustomers();
+      const found = matchCustomer(allCustomers);
+      if (found) {
+        loginWith(found);
+        return;
+      }
+
+      // Fallback: use already-loaded in-memory list (covers slow network / race)
+      const localFound = matchCustomer(customers);
+      if (localFound) {
+        loginWith(localFound);
+        return;
+      }
+
+      toast.error("Invalid store number or password.");
     } catch (err) {
       console.error("Customer login error", err);
-      toast.error("Login failed. Please try again.");
+      // Error fallback: try local match
+      const localFound = matchCustomer(customers);
+      if (localFound) {
+        loginWith(localFound);
+      } else {
+        toast.error("Login failed. Please check store number and password.");
+      }
     } finally {
       setLoading(false);
     }
@@ -319,7 +359,7 @@ export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
                   <Input
                     data-ocid="admin.login.input"
                     type="email"
-                    placeholder={profile.email || "admin@ganeshsuppliers.com"}
+                    placeholder={profile.email || "pushpak38517@gmail.com"}
                     value={adminForm.email}
                     onChange={(e) =>
                       setAdminForm((p) => ({ ...p, email: e.target.value }))
@@ -373,7 +413,7 @@ export default function LoginPage({ onAdminLogin, onCustomerLogin }: Props) {
                 className="mt-4 text-xs text-center"
                 style={{ color: "rgba(255,255,255,0.3)" }}
               >
-                Default: admin@ganeshsuppliers.com / Admin@1234
+                Default: pushpak38517@gmail.com / Admin@1234
               </p>
             </div>
           </div>

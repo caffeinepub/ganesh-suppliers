@@ -140,24 +140,24 @@ actor {
   // Stable storage
   //
   // MIGRATION NOTES:
-  //   - accessControlState: absorbed from old canister (was created by MixinAuthorization);
-  //     kept here to prevent "cannot be implicitly discarded" error; never used.
-  //   - userProfiles: absorbed from old canister; kept here; never used.
-  //   - orders: the V1 stable var (old Order type, no isDeleted/deleteReason/deletedAt);
-  //     migrated to ordersV2 in postupgrade.
-  //   - ordersV2: current Order storage (with isDeleted etc.).
+  //   - accessControlState: absorbed from old canister; never used.
+  //   - userProfiles: absorbed from old canister; never used.
+  //   - orders: V1 stable var; migrated to ordersV2 in postupgrade.
+  //   - ordersV2: current Order storage.
+  //   - dataClearedOnce: one-time flag; when false on upgrade, wipes all demo
+  //     data and sets to true so future deploys never wipe real data again.
   // ---------------------------------------------------------------------------
 
-  // Absorb old stable var: accessControlState (from MixinAuthorization, no longer used)
+  // Absorb old stable var: accessControlState
   let accessControlState : { var adminAssigned : Bool; userRoles : Map.Map<Principal, UserRole> } = {
     var adminAssigned = false;
     userRoles = Map.empty<Principal, UserRole>();
   };
 
-  // Absorb old stable var: userProfiles (no longer used)
+  // Absorb old stable var: userProfiles
   let userProfiles = Map.empty<Principal, UserProfile>();
 
-  // Absorb old stable var: orders (V1 type, migrated to ordersV2 in postupgrade)
+  // Absorb old stable var: orders (V1 type)
   let orders = Map.empty<Text, OrderV1>();
 
   // Current storage
@@ -167,8 +167,16 @@ actor {
   stable var payments = Map.empty<Text, Payment>();
   stable var companyProfile : ?CompanyProfile = null;
 
-  // Migrate V1 orders to current format after upgrade
+  // One-time data wipe flag.
+  // On this deployment: false -> clears all demo data, then set to true.
+  // All future deployments: already true -> skip wipe, real data is safe.
+  stable var dataClearedOnce : Bool = false;
+
+  // Migration flag: fix admin email from legacy value to pushpak38517@gmail.com
+  stable var adminEmailMigrated : Bool = false;
+
   system func postupgrade<system>() {
+    // Migrate V1 orders to current format
     for ((id, o) in orders.entries()) {
       ordersV2.add(
         id,
@@ -190,6 +198,65 @@ actor {
         },
       );
     };
+
+    // MIGRATION: fix admin email from legacy hardcoded value to real admin email
+    if (not adminEmailMigrated) {
+      switch (companyProfile) {
+        case null {};
+        case (?p) {
+          let needsFix = p.adminUserId == "admin@ganeshsuppliers.com" or p.adminUserId == "admin" or p.email == "admin@ganeshsuppliers.com";
+          if (needsFix) {
+            let newEmail = if (p.email == "admin@ganeshsuppliers.com" or p.email == "") { "pushpak38517@gmail.com" } else { p.email };
+            let newUserId = if (p.adminUserId == "admin@ganeshsuppliers.com" or p.adminUserId == "admin" or p.adminUserId == "") { newEmail } else { p.adminUserId };
+            companyProfile := ?{ p with email = newEmail; adminUserId = newUserId };
+          };
+        };
+      };
+      adminEmailMigrated := true;
+    };
+
+    // ONE-TIME WIPE: clear all demo/old data on this deployment only.
+    // dataClearedOnce starts as false on the first time this code runs.
+    // After wipe it is set to true and stays true across all future deploys.
+    if (not dataClearedOnce) {
+      ordersV2 := Map.empty<Text, Order>();
+      products := Map.empty<Text, Product>();
+      customers := Map.empty<Text, Customer>();
+      payments := Map.empty<Text, Payment>();
+      // Preserve admin password if profile exists, else reset to blank.
+      let savedPassword = switch (companyProfile) {
+        case null { "Admin@1234" };
+        case (?p) { p.adminPasswordHash };
+      };
+      let savedEmail = switch (companyProfile) {
+        case null { "pushpak38517@gmail.com" };
+        case (?p) { if (p.email == "") { "pushpak38517@gmail.com" } else { p.email } };
+      };
+      let savedAdminUserId = switch (companyProfile) {
+        case null { "pushpak38517@gmail.com" };
+        case (?p) { if (p.adminUserId == "" or p.adminUserId == "admin") { savedEmail } else { p.adminUserId } };
+      };
+      companyProfile := ?{
+        logoUrl = switch (companyProfile) { case null { null }; case (?p) { p.logoUrl } };
+        companyName = "Ganesh Suppliers";
+        gstNumber = "";
+        contact = "";
+        email = savedEmail;
+        address = "";
+        bankAccountNumber = "";
+        bankAccountName = "";
+        bankName = "";
+        ifscCode = "";
+        upiId = "";
+        branchName = "";
+        upiQrImageUrl = null;
+        signatureUrl = null;
+        adminUserId = savedAdminUserId;
+        adminPasswordHash = savedPassword;
+        appVersion = "10.1";
+      };
+      dataClearedOnce := true;
+    };
   };
 
   // ---------------------------------------------------------------------------
@@ -210,6 +277,56 @@ actor {
 
   func comparePayments(a : Payment, b : Payment) : Order.Order {
     Int.compare(a.recordedAt, b.recordedAt);
+  };
+
+  // ---------------------------------------------------------------------------
+  // Admin: Clear All Data
+  // Wipes all customers, products, orders, payments.
+  // Preserves admin login credentials.
+  // Safe to call at any time from the admin portal.
+  // ---------------------------------------------------------------------------
+
+  public shared func clearAllData() : async () {
+    ordersV2 := Map.empty<Text, Order>();
+    products := Map.empty<Text, Product>();
+    customers := Map.empty<Text, Customer>();
+    payments := Map.empty<Text, Payment>();
+    // Keep profile/credentials but reset business details
+    let savedPassword = switch (companyProfile) {
+      case null { "Admin@1234" };
+      case (?p) { p.adminPasswordHash };
+    };
+    let savedCompanyName = switch (companyProfile) {
+      case null { "Ganesh Suppliers" };
+      case (?p) { p.companyName };
+    };
+    let savedEmail2 = switch (companyProfile) {
+      case null { "pushpak38517@gmail.com" };
+      case (?p) { if (p.email == "") { "pushpak38517@gmail.com" } else { p.email } };
+    };
+    let savedAdminUserId2 = switch (companyProfile) {
+      case null { "pushpak38517@gmail.com" };
+      case (?p) { if (p.adminUserId == "" or p.adminUserId == "admin") { savedEmail2 } else { p.adminUserId } };
+    };
+    companyProfile := ?{
+      logoUrl = null;
+      companyName = savedCompanyName;
+      gstNumber = "";
+      contact = "";
+      email = savedEmail2;
+      address = "";
+      bankAccountNumber = "";
+      bankAccountName = "";
+      bankName = "";
+      ifscCode = "";
+      upiId = "";
+      branchName = "";
+      upiQrImageUrl = null;
+      signatureUrl = null;
+      adminUserId = savedAdminUserId2;
+      adminPasswordHash = savedPassword;
+      appVersion = "10.1";
+    };
   };
 
   // ---------------------------------------------------------------------------
@@ -425,7 +542,7 @@ actor {
   };
 
   // ---------------------------------------------------------------------------
-  // Backward-compat stubs (referenced by backend.d.ts / old frontend bindings)
+  // Backward-compat stubs
   // ---------------------------------------------------------------------------
 
   public shared ({ caller }) func assignCallerUserRole(_user : Principal, _role : UserRole) : async () {};
