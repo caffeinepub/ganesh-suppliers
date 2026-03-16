@@ -59,6 +59,9 @@ export const Order = IDL.Record({
   'companyName' : IDL.Text,
   'customerId' : IDL.Text,
   'items' : IDL.Vec(OrderItem),
+  'isDeleted' : IDL.Bool,
+  'deleteReason' : IDL.Text,
+  'deletedAt' : IDL.Opt(Time),
 });
 export const PaymentMethod = IDL.Variant({
   'cash' : IDL.Null,
@@ -242,6 +245,9 @@ export const idlFactory = ({ IDL }) => {
     'companyName' : IDL.Text,
     'customerId' : IDL.Text,
     'items' : IDL.Vec(OrderItem),
+    'isDeleted' : IDL.Bool,
+    'deleteReason' : IDL.Text,
+    'deletedAt' : IDL.Opt(Time),
   });
   const PaymentMethod = IDL.Variant({
     'cash' : IDL.Null,

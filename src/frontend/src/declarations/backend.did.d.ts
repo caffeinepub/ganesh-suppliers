@@ -64,6 +64,9 @@ export interface Order {
   'companyName' : string,
   'customerId' : string,
   'items' : Array<OrderItem>,
+  'isDeleted' : boolean,
+  'deleteReason' : string,
+  'deletedAt' : [] | [Time],
 }
 export interface OrderItem {
   'rate' : number,
